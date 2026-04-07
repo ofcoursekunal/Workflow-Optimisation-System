@@ -31,6 +31,7 @@ app.use('/api/tasks', require('./routes/tasks'));
 app.use('/api/logs', require('./routes/logs'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/analytics', require('./routes/analytics'));
+app.use('/api/reports', require('./routes/reports'));
 
 // Socket.io
 io.on('connection', (socket) => {

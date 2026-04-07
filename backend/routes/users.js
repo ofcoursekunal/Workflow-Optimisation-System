@@ -43,7 +43,17 @@ router.put('/:id', auth, (req, res) => {
 // DELETE user (Admin only)
 router.delete('/:id', auth, (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
-  db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  const userId = req.params.id;
+  db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+
+  const io = req.app.get('io');
+  if (io) {
+    io.emit('user:deleted', { id: parseInt(userId) });
+    // Trigger autoAssign because a worker might have been deleted, leaving tasks unassigned
+    const autoAssign = req.app.get('autoAssign');
+    if (autoAssign) autoAssign.attemptAutoAssign(io);
+  }
+  
   res.json({ success: true });
 });
 

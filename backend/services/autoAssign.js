@@ -24,8 +24,8 @@ function getIdleMinutes(isoString) {
  */
 async function attemptAutoAssign(io) {
   try {
-    // 1. Find unassigned tasks that are not started
-    const pendingTasks = db.prepare(`
+    // 1. Find unassigned tasks that are not started (Primary Priority)
+    let pendingTasks = db.prepare(`
       SELECT t.*, u.name as worker_name, m.name as machine_name
       FROM tasks t
       LEFT JOIN users u ON t.assigned_worker_id = u.id
@@ -35,6 +35,24 @@ async function attemptAutoAssign(io) {
         CASE t.priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
         t.created_at ASC
     `).all();
+
+    // 2. Load Rebalancing: If no unassigned tasks, find tasks to 'steal' for idle workers
+    if (pendingTasks.length === 0) {
+      const idleWorkers = db.prepare("SELECT id FROM users WHERE role = 'worker' AND status = 'idle'").all();
+      if (idleWorkers.length > 0) {
+        // Find tasks that are 'not_started' but assigned to workers who have multiple tasks in queue
+        // We pick the one from the worker with the largest queue
+        pendingTasks = db.prepare(`
+          SELECT t.*, 
+                 (SELECT COUNT(*) FROM tasks WHERE assigned_worker_id = t.assigned_worker_id AND status = 'not_started') as source_queue_size
+          FROM tasks t
+          WHERE t.status = 'not_started' AND t.assigned_worker_id IS NOT NULL
+          AND source_queue_size >= 1
+          ORDER BY source_queue_size DESC, t.created_at ASC
+          LIMIT 5
+        `).all();
+      }
+    }
 
     if (pendingTasks.length === 0) return 0;
 
@@ -57,20 +75,33 @@ async function attemptAutoAssign(io) {
 
       if (!targetWorker) continue;
 
-      // 3. Find Best Machine (Shortest Queue)
-      let targetMachine = db.prepare(`
-        SELECT id, name, status,
-               (SELECT COUNT(*) FROM tasks WHERE machine_id = machines.id AND status = 'not_started') as queue_size
-        FROM machines
-        WHERE status != 'breakdown'
-        ORDER BY 
-          CASE status WHEN 'idle' THEN 1 WHEN 'occupied' THEN 2 ELSE 3 END,
-          queue_size ASC,
-          created_at ASC
-        LIMIT 1
-      `).get();
+      // 3. Find Best Machine (If not already set)
+      let targetMachine;
+      if (task.machine_id) {
+        targetMachine = db.prepare(`
+          SELECT id, name, status,
+                 (SELECT COUNT(*) FROM tasks WHERE machine_id = machines.id AND status = 'not_started') as queue_size
+          FROM machines
+          WHERE id = ?
+        `).get(task.machine_id);
+      } else {
+        targetMachine = db.prepare(`
+          SELECT id, name, status,
+                 (SELECT COUNT(*) FROM tasks WHERE machine_id = machines.id AND status = 'not_started') as queue_size
+          FROM machines
+          WHERE status != 'breakdown'
+          ORDER BY 
+            CASE status WHEN 'idle' THEN 1 WHEN 'occupied' THEN 2 ELSE 3 END,
+            queue_size ASC,
+            created_at ASC
+          LIMIT 1
+        `).get();
+      }
 
       if (targetWorker && targetMachine) {
+        const oldWorkerId = task.assigned_worker_id;
+        const isRebalance = oldWorkerId && oldWorkerId !== targetWorker.id;
+
         // 4. Assign
         db.prepare(`UPDATE tasks SET assigned_worker_id = ?, machine_id = ? WHERE id = ?`)
           .run(targetWorker.id, targetMachine.id, task.id);
@@ -81,19 +112,31 @@ async function attemptAutoAssign(io) {
           if (io) io.emit('machine:status', { id: targetMachine.id, status: 'occupied' });
         }
 
-        // If worker was idle, we still keep them idle until they START (previous logic)
-        
+        const note = isRebalance 
+          ? `🔄 Rebalanced: Transferred from another worker to ${targetWorker.name}`
+          : `🤖 Auto-assigned to ${targetWorker.name} on ${targetMachine.name} (Queue: ${targetMachine.queue_size + 1})`;
+
         db.prepare(`
           INSERT INTO task_logs (task_id, action, note, performed_by)
           VALUES (?, 'assigned', ?, NULL)
-        `).run(task.id, `🤖 Auto-assigned to ${targetWorker.name} on ${targetMachine.name} (Queue: ${targetMachine.queue_size + 1})`);
+        `).run(task.id, note);
 
-        // Notification
-        const msg = `🤖 Auto-Assignment: "${task.title}" → ${targetWorker.name}`;
+        // Notification for new worker
+        const msg = isRebalance 
+          ? `🔄 Task Rebalanced: "${task.title}" has been moved to your queue for faster completion.`
+          : `🤖 Auto-Assignment: "${task.title}" → ${targetWorker.name}`;
+        
         [targetWorker.id, ...supervisors.map(s => s.id)].forEach(uid => {
           createNotif(uid, msg, 'info');
           if (io) io.to(`user_${uid}`).emit('notification:new', { message: msg, type: 'info' });
         });
+
+        // Optional: Notify old worker if it was a rebalance
+        if (isRebalance) {
+          const oldMsg = `ℹ️ Task "${task.title}" was moved to another worker for faster processing.`;
+          createNotif(oldWorkerId, oldMsg, 'info');
+          if (io) io.to(`user_${oldWorkerId}`).emit('notification:new', { message: oldMsg, type: 'info' });
+        }
 
         // Broadcast task update
         const updatedTask = db.prepare(`SELECT t.*, u.name as worker_name, m.name as machine_name FROM tasks t LEFT JOIN users u ON t.assigned_worker_id = u.id LEFT JOIN machines m ON t.machine_id = m.id WHERE t.id = ?`).get(task.id);

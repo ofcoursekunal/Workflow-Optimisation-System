@@ -4,8 +4,9 @@ const path = require('path');
 const DB_PATH = path.join(__dirname, 'shopfloor.db');
 const db = new Database(DB_PATH);
 
-// Enable WAL mode for better performance
+// Enable WAL mode and foreign keys
 db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
 
 // Create tables
 db.exec(`
@@ -24,7 +25,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     type TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('running','idle','breakdown')),
+    status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle','occupied','running','breakdown')),
     last_active_at DATETIME,
     idle_since DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -34,9 +35,9 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     description TEXT,
-    machine_id INTEGER REFERENCES machines(id),
-    assigned_worker_id INTEGER REFERENCES users(id),
-    created_by INTEGER REFERENCES users(id),
+    machine_id INTEGER REFERENCES machines(id) ON DELETE SET NULL,
+    assigned_worker_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     priority TEXT NOT NULL DEFAULT 'medium' CHECK(priority IN ('high','medium','low')),
     expected_minutes INTEGER NOT NULL DEFAULT 30,
     status TEXT NOT NULL DEFAULT 'not_started' CHECK(status IN ('not_started','in_progress','paused','completed','delayed')),
@@ -45,6 +46,11 @@ db.exec(`
     deadline_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  
+  -- Ensure machines status check has 'occupied'
+  -- Note: We recreate or alter if needed, but here we'll just make sure the SQL reflects it for new setups
+  -- To fix existing, we'll run a migration script.
+  
 
   CREATE TABLE IF NOT EXISTS task_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

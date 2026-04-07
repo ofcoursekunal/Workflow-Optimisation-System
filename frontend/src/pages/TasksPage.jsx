@@ -5,7 +5,7 @@ import { useSocket } from '../context/SocketContext';
 import toast from 'react-hot-toast';
 import {
   Plus, Search, Filter, Edit2, Trash2, User, Cpu,
-  ChevronDown, X, Loader2, AlertCircle, Clock
+  ChevronDown, X, Loader2, AlertCircle, Clock, ClipboardList
 } from 'lucide-react';
 
 const PAUSE_REASONS = [
@@ -32,6 +32,7 @@ function StatusBadge({ status, unassigned, workerStatus, machineStatus }) {
   }
   return <span className={`badge badge-${status}`}>{status.replace('_', ' ')}</span>;
 }
+
 function PriorityBadge({ priority }) {
   return <span className={`badge badge-${priority}`}>{priority}</span>;
 }
@@ -86,8 +87,13 @@ function TaskFormModal({ onClose, onSave, editTask, workers, machines }) {
               <label className="text-xs text-slate-400 block mb-1">Assign Machine</label>
               <select className="select" value={form.machine_id} onChange={e => setForm(p => ({ ...p, machine_id: e.target.value }))}>
                 <option value="">— None —</option>
-                {machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {machines.map(m => <option key={m.id} value={m.id}>{m.name} ({m.status})</option>)}
               </select>
+              {form.machine_id && machines.find(m => m.id === parseInt(form.machine_id))?.status !== 'idle' && (
+                <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1">
+                  <AlertCircle size={10} /> Machine is currently {machines.find(m => m.id === parseInt(form.machine_id))?.status}. Queue will be created.
+                </p>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -203,108 +209,119 @@ export default function TasksPage() {
   };
 
   const filtered = tasks.filter(t => {
-    const matchSearch = !search || t.title.toLowerCase().includes(search.toLowerCase()) || t.worker_name?.toLowerCase().includes(search.toLowerCase());
+    const s = search.toLowerCase();
+    const matchSearch = !search || t.title.toLowerCase().includes(s) || t.worker_name?.toLowerCase().includes(s) || t.machine_name?.toLowerCase().includes(s);
     const matchStatus = !filterStatus || t.status === filterStatus;
     const matchPriority = !filterPriority || t.priority === filterPriority;
     return matchSearch && matchStatus && matchPriority;
   });
 
+  const isWorker = user?.role === 'worker';
+
   return (
-    <div className="space-y-5 animate-slide-in">
+    <div className="space-y-6 pb-20">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-slate-100">Task Management</h1>
-          <p className="text-sm text-slate-400">{tasks.length} total tasks</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
+            <ClipboardList className="text-blue-400" />
+            {isWorker ? 'Work Order' : 'Shopfloor Tasks'}
+          </h1>
+          <p className="text-slate-400 text-sm">
+            {isWorker ? `${tasks.length} tasks in your queue` : 'Monitor and assign factory floor operations'}
+          </p>
         </div>
-        {user?.role !== 'worker' && (
-          <button id="create-task-btn" className="btn-primary" onClick={() => { setEditTask(null); setShowForm(true); }}>
-            <Plus size={16} /> Create Task
+
+        {!isWorker && (
+          <button onClick={() => { setEditTask(null); setShowForm(true); }} className="btn-primary w-fit">
+            <Plus size={18} /> Create New Task
           </button>
         )}
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="relative flex-1">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className="input pl-9" placeholder="Search tasks or workers..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <select className="select w-auto" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-          <option value="">All Statuses</option>
-          {STATUS_ORDER.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-        </select>
-        <select className="select w-auto" value={filterPriority} onChange={e => setFilterPriority(e.target.value)}>
-          <option value="">All Priorities</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-        </select>
-      </div>
-
-      {/* Task Table */}
-      {loading ? (
-        <div className="flex justify-center py-16"><Loader2 size={28} className="text-blue-400 animate-spin" /></div>
-      ) : (
-        <div className="card p-0 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-700/30">
-                <tr className="text-left text-slate-400 text-xs uppercase tracking-wider">
-                  {['Task', 'Worker', 'Machine', 'Priority', 'Status', 'Expected', 'Actions'].map(h => (
-                    <th key={h} className="px-4 py-3 font-medium whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.length === 0 && (
-                  <tr><td colSpan={7} className="text-center py-12 text-slate-500">No tasks found</td></tr>
-                )}
-                {filtered.map(task => (
-                  <tr key={task.id} className={`table-row ${task.status === 'delayed' ? 'bg-red-500/5' : (!task.assigned_worker_id ? 'bg-blue-500/5' : '')}`}>
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="font-medium text-slate-200 max-w-xs truncate">{task.title}</p>
-                        {task.description && <p className="text-xs text-slate-500 truncate max-w-xs">{task.description}</p>}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-slate-300 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <User size={13} className="text-slate-500" />
-                        {task.worker_name || <span className="text-slate-600">Unassigned</span>}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-slate-300 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <Cpu size={13} className="text-slate-500" />
-                        {task.machine_name || <span className="text-slate-600">—</span>}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3"><PriorityBadge priority={task.priority} /></td>
-                    <td className="px-4 py-3"><StatusBadge status={task.status} unassigned={!task.assigned_worker_id} workerStatus={task.worker_status} machineStatus={task.machine_status} /></td>
-                    <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{task.expected_minutes}m</td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-1">
-                        {user?.role !== 'worker' && <>
-                          <button title="Edit" className="p-1.5 text-slate-400 hover:text-blue-400 transition-colors" onClick={() => { setEditTask(task); setShowForm(true); }}>
-                            <Edit2 size={14} />
-                          </button>
-                          <button title="Override Status" className="p-1.5 text-slate-400 hover:text-amber-400 transition-colors" onClick={() => setOverrideTask(task)}>
-                            <AlertCircle size={14} />
-                          </button>
-                          <button title="Delete" className="p-1.5 text-slate-400 hover:text-red-400 transition-colors" onClick={() => deleteTask(task.id)}>
-                            <Trash2 size={14} />
-                          </button>
-                        </>}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <div className="space-y-5 animate-slide-in">
+        {/* Filters */}
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input className="input pl-9" placeholder="Search tasks..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
+          <select className="select w-auto" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+            <option value="">All Statuses</option>
+            {STATUS_ORDER.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+          </select>
+          <select className="select w-auto" value={filterPriority} onChange={e => setFilterPriority(e.target.value)}>
+            <option value="">All Priorities</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
         </div>
-      )}
+
+        {/* Task Table */}
+        {loading ? (
+          <div className="flex justify-center py-16"><Loader2 size={28} className="text-blue-400 animate-spin" /></div>
+        ) : (
+          <div className="card p-0 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-700/30">
+                  <tr className="text-left text-slate-400 text-xs uppercase tracking-wider">
+                    {['Task', 'Worker', 'Machine', 'Priority', 'Status', 'Expected', 'Actions'].map(h => (
+                      <th key={h} className="px-4 py-3 font-medium whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 && (
+                    <tr><td colSpan={7} className="text-center py-12 text-slate-500">No tasks found</td></tr>
+                  )}
+                  {filtered.map(task => (
+                    <tr key={task.id} className={`table-row ${task.status === 'delayed' ? 'bg-red-500/5' : (!task.assigned_worker_id ? 'bg-blue-500/5' : '')}`}>
+                      <td className="px-4 py-3">
+                        <div>
+                          <p className="font-medium text-slate-200 max-w-xs truncate">{task.title}</p>
+                          {task.description && <p className="text-xs text-slate-500 truncate max-w-xs">{task.description}</p>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <User size={13} className="text-slate-500" />
+                          {task.worker_name || <span className="text-slate-600">Unassigned</span>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <Cpu size={13} className="text-slate-500" />
+                          {task.machine_name || <span className="text-slate-600">—</span>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3"><PriorityBadge priority={task.priority} /></td>
+                      <td className="px-4 py-3"><StatusBadge status={task.status} unassigned={!task.assigned_worker_id} workerStatus={task.worker_status} machineStatus={task.machine_status} /></td>
+                      <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{task.expected_minutes}m</td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1">
+                          {user?.role !== 'worker' && <>
+                            <button title="Edit" className="p-1.5 text-slate-400 hover:text-blue-400 transition-colors" onClick={() => { setEditTask(task); setShowForm(true); }}>
+                              <Edit2 size={14} />
+                            </button>
+                            <button title="Override Status" className="p-1.5 text-slate-400 hover:text-amber-400 transition-colors" onClick={() => setOverrideTask(task)}>
+                              <AlertCircle size={14} />
+                            </button>
+                            <button title="Delete" className="p-1.5 text-slate-400 hover:text-red-400 transition-colors" onClick={() => deleteTask(task.id)}>
+                              <Trash2 size={14} />
+                            </button>
+                          </>}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
 
       {showForm && <TaskFormModal onClose={() => setShowForm(false)} onSave={() => { setShowForm(false); fetchAll(); }} editTask={editTask} workers={workers} machines={machines} />}
       {overrideTask && <OverrideModal task={overrideTask} onClose={() => setOverrideTask(null)} onSave={() => { setOverrideTask(null); fetchAll(); }} />}

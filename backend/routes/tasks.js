@@ -253,18 +253,60 @@ router.put('/:id', auth, (req, res) => {
 // DELETE task (Admin/Supervisor)
 router.delete('/:id', auth, (req, res) => {
   if (req.user.role === 'worker') return res.status(403).json({ error: 'Forbidden' });
-  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
-  db.prepare('DELETE FROM task_logs WHERE task_id = ?').run(req.params.id);
-  db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
-
-  if (task && task.assigned_worker_id) {
-    db.prepare("UPDATE users SET status = 'idle', last_idle_at = CURRENT_TIMESTAMP WHERE id = ?").run(task.assigned_worker_id);
-    const io = req.app.get('io');
-    if (io) io.emit('user:status', { userId: task.assigned_worker_id, status: 'idle', last_idle_at: new Date().toISOString() });
-  }
+  
+  const taskId = parseInt(req.params.id);
+  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
 
   const io = req.app.get('io');
-  if (io) io.emit('task:deleted', { id: parseInt(req.params.id) });
+  const now = new Date().toISOString();
+
+  // 1. Delete associated logs and the task itself
+  db.prepare('DELETE FROM task_logs WHERE task_id = ?').run(taskId);
+  db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
+
+  // 2. Machine Status Recalculation
+  // If the task was occupying a machine, check if it should now be idle or re-queued
+  if (task.machine_id) {
+    const activeOnMachine = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE machine_id = ? AND status = 'in_progress'").get(task.machine_id);
+    
+    if (activeOnMachine.c === 0) {
+      // Machine is no longer "Running". Check for next pending task.
+      const nextTask = db.prepare("SELECT * FROM tasks WHERE machine_id = ? AND status = 'not_started' ORDER BY priority DESC, created_at ASC LIMIT 1").get(task.machine_id);
+      
+      const newMachineStatus = nextTask ? 'occupied' : 'idle';
+      db.prepare("UPDATE machines SET status = ?, idle_since = ? WHERE id = ?").run(newMachineStatus, newMachineStatus === 'idle' ? now : null, task.machine_id);
+      
+      const updatedMachine = db.prepare('SELECT * FROM machines WHERE id = ?').get(task.machine_id);
+      emitUpdate(req, 'machine:status', updatedMachine);
+
+      // Notify the next worker in line if the machine is now "Occupied" (reserved for them)
+      if (nextTask && nextTask.assigned_worker_id) {
+        const msg = `🟢 Machine "${updatedMachine.name}" is now free! Your task "${nextTask.title}" is ready to start.`;
+        notifyAndEmit(req, [nextTask.assigned_worker_id], msg, 'success', 'notification:new', { message: msg, type: 'success' });
+      }
+    }
+  }
+
+  // 3. Worker Status Recalculation
+  if (task.assigned_worker_id) {
+    const workerPendingTasks = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE assigned_worker_id = ? AND status IN ('in_progress', 'not_started', 'paused')").get(task.assigned_worker_id);
+    
+    if (workerPendingTasks.c === 0) {
+      // Worker has no more work, set to idle
+      db.prepare("UPDATE users SET status = 'idle', last_idle_at = CURRENT_TIMESTAMP WHERE id = ?").run(task.assigned_worker_id);
+      if (io) io.emit('user:status', { userId: task.assigned_worker_id, status: 'idle', last_idle_at: new Date().toISOString() });
+    }
+  }
+
+  // 4. Real-time Refresh & Auto-Assignment Trigger
+  if (io) {
+    io.emit('task:deleted', { id: taskId });
+    // Trigger auto-assignment to fill any idle capacity created by this deletion
+    const autoAssign = req.app.get('autoAssign');
+    if (autoAssign) autoAssign.attemptAutoAssign(io);
+  }
+
   res.json({ success: true });
 });
 
