@@ -1,28 +1,31 @@
 /** @type {import('tailwindcss').Config} */
-module.exports = {
-    content: [
-      "./src/**/*.{js,jsx,ts,tsx}",
-    ],
-    theme: {
-      extend: {
-        backdropBlur: {
-          xs: '2px',
-        },
-        colors: {
-          // Professional industrial slate palette
-          slate: {
-            850: '#1e293b',
-            950: '#020617',
-          },
-        },
-        borderRadius: {
-          '4xl': '2rem',
-          '5xl': '3rem',
-        },
-        animation: {
-          'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-        }
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
       },
+      colors: {
+        primary: {
+          50: '#eff6ff',
+          100: '#dbeafe',
+          500: '#3b82f6',
+          600: '#2563eb',
+          700: '#1d4ed8',
+          900: '#1e3a8a',
+        },
+        shopfloor: {
+          dark: '#0f172a',
+          card: '#1e293b',
+          border: '#334155',
+          muted: '#64748b',
+        }
+      }
     },
-    plugins: [],
-  }
+  },
+  plugins: [],
+}

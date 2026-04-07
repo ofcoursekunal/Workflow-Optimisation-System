@@ -1,37 +1,60 @@
-// backend/server.js
 require('dotenv').config();
 const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
 const cors = require('cors');
+const path = require('path');
+
 const app = express();
+const server = http.createServer(app);
 
-// Import your existing routes
-const jobRoutes = require('./api/jobRoutes');
-const alertRoutes = require('./api/routes'); 
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE']
+  }
+});
 
-app.use(cors()); // Allow Frontend to connect
+// Middleware
+app.use(cors());
 app.use(express.json());
+app.set('io', io);
 
-// Redirect logic to your services
-app.use('/jobs', jobRoutes);
-app.use('/alerts', alertRoutes);
+// Health check
+app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
 
-// Example: Direct mapping for the "Start/Complete" buttons in the UI
-const performanceService = require('./services/performanceService');
+// Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/users', require('./routes/users'));
+app.use('/api/machines', require('./routes/machines'));
+app.use('/api/tasks', require('./routes/tasks'));
+app.use('/api/logs', require('./routes/logs'));
+app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/analytics', require('./routes/analytics'));
 
-app.post('/start', async (req, res) => {
-    try {
-        // Log start time in Supabase
-        res.json({ message: "Job started" });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+// Socket.io
+io.on('connection', (socket) => {
+  console.log('Client connected:', socket.id);
+
+  // Join user-specific room for targeted notifications
+  socket.on('join', (userId) => {
+    socket.join(`user_${userId}`);
+    console.log(`User ${userId} joined their room`);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+  });
 });
 
-app.post('/complete', async (req, res) => {
-    try {
-        await performanceService.trackJobCompletionTime(req.body.jobId);
-        await performanceService.calculateEfficiency(req.body.jobId);
-        res.json({ message: "Job completed and efficiency logged" });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
+// Background services
+require('./services/idleDetector')(io);
+require('./services/delayDetector')(io);
+app.set('autoAssign', require('./services/autoAssign')(io));
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Smart Floor Backend running on port ${PORT}`));
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  console.log(`\n🔧 Shopfloor Backend running on http://localhost:${PORT}`);
+  console.log('📊 Real-time Socket.io active');
+  console.log('🔔 Background detectors running\n');
+});
