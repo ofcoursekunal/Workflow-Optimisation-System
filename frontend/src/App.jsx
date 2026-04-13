@@ -12,6 +12,7 @@ import MachinesPage from './pages/MachinesPage';
 import WorkerDashboard from './pages/WorkerDashboard';
 import AnalyticsPage from './pages/AnalyticsPage';
 import UsersPage from './pages/UsersPage';
+import RequestsPage from './pages/RequestsPage';
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, loading } = useAuth();
@@ -63,12 +64,14 @@ function AppRoutes() {
       <Route path="/admin/machines" element={<ProtectedRoute allowedRoles={['admin']}><Layout><MachinesPage /></Layout></ProtectedRoute>} />
       <Route path="/admin/users" element={<ProtectedRoute allowedRoles={['admin']}><Layout><UsersPage /></Layout></ProtectedRoute>} />
       <Route path="/admin/analytics" element={<ProtectedRoute allowedRoles={['admin']}><Layout><AnalyticsPage /></Layout></ProtectedRoute>} />
+      <Route path="/admin/requests" element={<ProtectedRoute allowedRoles={['admin']}><Layout><RequestsPage /></Layout></ProtectedRoute>} />
 
       {/* Supervisor */}
       <Route path="/supervisor" element={<ProtectedRoute allowedRoles={['supervisor']}><Layout><AdminDashboard /></Layout></ProtectedRoute>} />
       <Route path="/supervisor/tasks" element={<ProtectedRoute allowedRoles={['supervisor']}><Layout><TasksPage /></Layout></ProtectedRoute>} />
       <Route path="/supervisor/machines" element={<ProtectedRoute allowedRoles={['supervisor']}><Layout><MachinesPage /></Layout></ProtectedRoute>} />
       <Route path="/supervisor/analytics" element={<ProtectedRoute allowedRoles={['supervisor']}><Layout><AnalyticsPage /></Layout></ProtectedRoute>} />
+      <Route path="/supervisor/requests" element={<ProtectedRoute allowedRoles={['supervisor']}><Layout><RequestsPage /></Layout></ProtectedRoute>} />
 
       {/* Worker */}
       <Route path="/worker" element={<ProtectedRoute allowedRoles={['worker']}><Layout><WorkerDashboard /></Layout></ProtectedRoute>} />

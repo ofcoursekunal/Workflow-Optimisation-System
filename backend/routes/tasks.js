@@ -58,7 +58,9 @@ router.get('/pool', auth, (req, res) => {
     FROM tasks t
     LEFT JOIN machines m ON t.machine_id = m.id
     LEFT JOIN users s ON t.created_by = s.id
-    WHERE t.assigned_worker_id IS NULL AND t.status = 'not_started'
+    WHERE t.assigned_worker_id IS NULL 
+    AND t.status = 'not_started'
+    AND (m.status IS NULL OR m.status != 'breakdown')
     ORDER BY CASE t.priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, t.created_at ASC
   `).all();
   res.json(tasks);
@@ -68,6 +70,19 @@ router.get('/pool', auth, (req, res) => {
 router.put('/:id/claim', auth, (req, res) => {
   if (req.user.role !== 'worker') return res.status(403).json({ error: 'Only workers can claim tasks' });
   const taskId = req.params.id;
+
+  const task = db.prepare(`
+    SELECT t.*, m.status as machine_status 
+    FROM tasks t 
+    LEFT JOIN machines m ON t.machine_id = m.id 
+    WHERE t.id = ?
+  `).get(taskId);
+
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  if (task.assigned_worker_id) return res.status(400).json({ error: 'Task already assigned' });
+  if (task.machine_status === 'breakdown') {
+    return res.status(400).json({ error: 'Cannot claim task: Machine is currently broken down.' });
+  }
 
   // 1. Check if user is on break
   const user = db.prepare('SELECT is_on_break FROM users WHERE id = ?').get(req.user.id);
@@ -81,14 +96,10 @@ router.put('/:id/claim', auth, (req, res) => {
     return res.status(400).json({ error: 'You are already working on another task. Please pause or complete it before accepting a new one.' });
   }
 
-  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
-  if (!task) return res.status(404).json({ error: 'Task not found' });
-  if (task.assigned_worker_id) return res.status(400).json({ error: 'Task already assigned' });
-
   db.prepare('UPDATE tasks SET assigned_worker_id = ? WHERE id = ?').run(req.user.id, taskId);
   db.prepare('INSERT INTO task_logs (task_id, action, note, performed_by) VALUES (?, ?, ?, ?)').run(taskId, 'assigned', 'Worker claimed task from pool', req.user.id);
 
-  const updatedTask = db.prepare(`SELECT t.*, u.name as worker_name, m.name as machine_name FROM tasks t LEFT JOIN users u ON t.assigned_worker_id = u.id LEFT JOIN machines m ON t.machine_id = m.id WHERE t.id = ?`).get(taskId);
+  const updatedTask = db.prepare(`SELECT t.*, u.name as worker_name, m.name as machine_name, m.status as machine_status FROM tasks t LEFT JOIN users u ON t.assigned_worker_id = u.id LEFT JOIN machines m ON t.machine_id = m.id WHERE t.id = ?`).get(taskId);
 
   emitUpdate(req, 'task:updated', updatedTask);
   res.json(updatedTask);
@@ -97,7 +108,7 @@ router.put('/:id/claim', auth, (req, res) => {
 // GET single task
 router.get('/:id', auth, (req, res) => {
   const task = db.prepare(`
-    SELECT t.*, u.name as worker_name, m.name as machine_name
+    SELECT t.*, u.name as worker_name, m.name as machine_name, m.status as machine_status
     FROM tasks t
     LEFT JOIN users u ON t.assigned_worker_id = u.id
     LEFT JOIN machines m ON t.machine_id = m.id
@@ -110,23 +121,32 @@ router.get('/:id', auth, (req, res) => {
 // POST create task (Admin/Supervisor)
 router.post('/', auth, (req, res) => {
   if (req.user.role === 'worker') return res.status(403).json({ error: 'Forbidden' });
-  const { title, description, machine_id, assigned_worker_id, priority, expected_minutes } = req.body;
-  if (!title) return res.status(400).json({ error: 'Title required.' });
+  const { title, description, machine_id, priority, expected_minutes } = req.body;
+  if (!title) return res.status(400).json({ error: 'Title required' });
 
-  // Enforce pool-based workflow: All new tasks start unassigned
+  if (machine_id) {
+    const machine = db.prepare('SELECT status FROM machines WHERE id = ?').get(machine_id);
+    if (machine && machine.status === 'breakdown') {
+      return res.status(400).json({ error: 'Cannot assign task to a broken machine.' });
+    }
+  }
+
   const result = db.prepare(`
-    INSERT INTO tasks (title, description, machine_id, assigned_worker_id, created_by, priority, expected_minutes, status)
-    VALUES (?, ?, ?, NULL, ?, ?, ?, 'not_started')
-  `).run(title, description || '', machine_id || null, req.user.id, priority || 'medium', expected_minutes || 30);
+    INSERT INTO tasks (title, description, machine_id, priority, expected_minutes, created_by, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'not_started')
+  `).run(title, description || '', machine_id || null, priority || 'medium', expected_minutes || 30, req.user.id);
 
-  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid);
-
-  db.prepare('INSERT INTO task_logs (task_id, action, note, performed_by) VALUES (?, ?, ?, ?)').run(task.id, 'assigned', 'Task added to community pool', req.user.id);
+  const newTask = db.prepare(`
+    SELECT t.*, m.name as machine_name, s.name as supervisor_name, m.status as machine_status
+    FROM tasks t
+    LEFT JOIN machines m ON t.machine_id = m.id
+    LEFT JOIN users s ON t.created_by = s.id
+    WHERE t.id = ?
+  `).get(result.lastInsertRowid);
 
   const io = req.app.get('io');
-  emitUpdate(req, 'task:updated', task);
-
-  res.json(task);
+  if (io) io.emit('task:updated', newTask);
+  res.json(newTask);
 });
 
 // PUT update task status (Worker actions + Supervisor override)
@@ -257,7 +277,13 @@ router.put('/:id', auth, (req, res) => {
         // General field update (Admin/Supervisor)
         if (req.user.role !== 'worker') {
           if (title !== undefined) updateFields.title = title;
-          if (machine_id !== undefined) updateFields.machine_id = machine_id;
+          if (machine_id !== undefined) {
+            const machine = db.prepare('SELECT status FROM machines WHERE id = ?').get(machine_id);
+            if (machine && machine.status === 'breakdown') {
+              return res.status(400).json({ error: 'Cannot assign task to a broken machine.' });
+            }
+            updateFields.machine_id = machine_id;
+          }
           if (assigned_worker_id !== undefined) updateFields.assigned_worker_id = assigned_worker_id;
           if (priority !== undefined) updateFields.priority = priority;
           if (expected_minutes !== undefined) updateFields.expected_minutes = expected_minutes;
@@ -278,7 +304,7 @@ router.put('/:id', auth, (req, res) => {
   }
 
   const updatedTask = db.prepare(`
-    SELECT t.*, u.name as worker_name, m.name as machine_name
+    SELECT t.*, u.name as worker_name, m.name as machine_name, m.status as machine_status
     FROM tasks t
     LEFT JOIN users u ON t.assigned_worker_id = u.id
     LEFT JOIN machines m ON t.machine_id = m.id

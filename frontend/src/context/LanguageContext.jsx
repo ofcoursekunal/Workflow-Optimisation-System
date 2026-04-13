@@ -66,6 +66,7 @@ const translations = {
         on_break: 'On Break',
         break_taken: 'Break Taken',
         break_limit_reached: 'Daily break limit reached',
+        requests: 'Requests',
     },
     hi: {
         dashboard: 'डैशबोर्ड',
@@ -130,6 +131,7 @@ const translations = {
         on_break: 'ब्रेक पर',
         break_taken: 'ब्रेक लिया गया',
         break_limit_reached: 'दैनिक ब्रेक सीमा समाप्त',
+        requests: 'अनुरोध',
     }
 };
 

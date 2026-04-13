@@ -9,7 +9,7 @@ import api from '../utils/api';
 import toast from 'react-hot-toast';
 import {
   Factory, LayoutDashboard, Cpu, ClipboardList, Users, BarChart3,
-  Bell, LogOut, Menu, X, Wifi, WifiOff, Sun, Moon, Languages
+  Bell, LogOut, Menu, X, Wifi, WifiOff, Sun, Moon, Languages, Coffee
 } from 'lucide-react';
 
 export default function Layout({ children }) {
@@ -37,6 +37,7 @@ export default function Layout({ children }) {
       { path: '/supervisor/tasks', label: t('manage_tasks'), icon: ClipboardList },
       { path: '/supervisor/machines', label: t('machines'), icon: Cpu },
       { path: '/supervisor/analytics', label: t('analytics'), icon: BarChart3 },
+      { path: '/supervisor/requests', label: t('requests'), icon: Coffee },
     ],
     worker: [
       { path: '/worker', label: t('my_tasks'), icon: ClipboardList },

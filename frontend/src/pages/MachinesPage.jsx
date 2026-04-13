@@ -3,7 +3,7 @@ import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import toast from 'react-hot-toast';
-import { Plus, Edit2, Trash2, X, Loader2, Clock, Cpu } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Loader2, Clock, Cpu, RefreshCw } from 'lucide-react';
 
 function MachineCard({ machine, canEdit, onEdit, onDelete }) {
   const statusCls = {
@@ -22,8 +22,18 @@ function MachineCard({ machine, canEdit, onEdit, onDelete }) {
     ? Math.round((Date.now() - new Date(machine.idle_since).getTime()) / 60000)
     : null;
 
+  const handleRepair = async (e) => {
+    e.stopPropagation();
+    try {
+      await api.post(`/machines/${machine.id}/repair`);
+      toast.success('Machine marked as repaired');
+    } catch {
+      toast.error('Failed to repair machine');
+    }
+  };
+
   return (
-    <div className={`card overflow-hidden transition-all duration-300 hover:shadow-md ${statusCls} p-5`}>
+    <div className={`card group relative overflow-hidden transition-all duration-300 hover:shadow-md ${statusCls} p-5`}>
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className={`w-2.5 h-2.5 rounded-full ${dotCls}`} />
@@ -33,7 +43,7 @@ function MachineCard({ machine, canEdit, onEdit, onDelete }) {
           </div>
         </div>
         {canEdit && (
-          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity [&:hover]:opacity-100 sm:opacity-100">
+          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             <button onClick={() => onEdit(machine)} className="p-1.5 text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors">
               <Edit2 size={14} />
             </button>
@@ -43,6 +53,16 @@ function MachineCard({ machine, canEdit, onEdit, onDelete }) {
           </div>
         )}
       </div>
+
+      {machine.status === 'breakdown' && canEdit && (
+        <button
+          onClick={handleRepair}
+          className="w-full mb-4 py-2 text-xs font-bold uppercase tracking-widest bg-red-500 hover:bg-red-600 text-white rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2"
+        >
+          <RefreshCw size={14} className="animate-spin-slow" /> Mark as Repaired
+        </button>
+      )}
+
       <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/50 flex items-center justify-between">
         <span className={`badge badge-${machine.status}`}>{machine.status.toUpperCase()}</span>
         {machine.status !== 'running' && idleDuration !== null && (

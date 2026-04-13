@@ -82,7 +82,11 @@ function TaskFormModal({ onClose, onSave, editTask, workers, machines }) {
             <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">{t('assign_machine')}</label>
             <select className="select" value={form.machine_id} onChange={e => setForm(p => ({ ...p, machine_id: e.target.value }))}>
               <option value="">— {t('none')} —</option>
-              {machines.map(m => <option key={m.id} value={m.id}>{m.name} ({m.status})</option>)}
+              {machines.map(m => (
+                <option key={m.id} value={m.id} disabled={m.status === 'breakdown'}>
+                  {m.name} ({m.status === 'breakdown' ? 'Broken' : m.status})
+                </option>
+              ))}
             </select>
           </div>
           <div className="grid sm:grid-cols-2 gap-4">

@@ -31,11 +31,32 @@ router.put('/:id', auth, (req, res) => {
   const { name, type, status } = req.body;
   const now = new Date().toISOString();
   let idleSince = null;
-  if (status === 'idle' || status === 'breakdown') idleSince = now;
+  if (status === 'idle' || status === 'breakdown') {
+    if (status === 'breakdown' && req.user.role === 'worker') {
+      return res.status(403).json({ error: 'Workers must report breakdowns via the requests system.' });
+    }
+    idleSince = now;
+  }
   db.prepare('UPDATE machines SET name = ?, type = ?, status = ?, idle_since = ?, last_active_at = ? WHERE id = ?')
     .run(name, type, status, idleSince, status === 'running' ? now : null, req.params.id);
   const machine = db.prepare('SELECT * FROM machines WHERE id = ?').get(req.params.id);
-  
+
+  // Emit socket event
+  const io = req.app.get('io');
+  if (io) io.emit('machine:status', machine);
+
+  res.json(machine);
+});
+
+// POST mark machine as repaired (Admin/Supervisor)
+router.post('/:id/repair', auth, (req, res) => {
+  if (req.user.role === 'worker') return res.status(403).json({ error: 'Forbidden' });
+
+  const now = new Date().toISOString();
+  db.prepare("UPDATE machines SET status = 'idle', idle_since = ?, last_active_at = NULL WHERE id = ?").run(now, req.params.id);
+
+  const machine = db.prepare('SELECT * FROM machines WHERE id = ?').get(req.params.id);
+
   // Emit socket event
   const io = req.app.get('io');
   if (io) io.emit('machine:status', machine);

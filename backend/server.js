@@ -33,6 +33,7 @@ app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/breaks', require('./routes/breaks'));
+app.use('/api/requests', require('./routes/requests'));
 
 // Socket.io
 io.on('connection', (socket) => {

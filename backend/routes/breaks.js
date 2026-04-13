@@ -76,6 +76,9 @@ router.get('/status', auth, (req, res) => {
 
 // POST start break
 router.post('/start', auth, (req, res) => {
+    if (req.user.role === 'worker') {
+        return res.status(403).json({ error: 'Workers must request break approval via the requests system.' });
+    }
     const userId = req.user.id;
     const io = req.app.get('io');
     const now = new Date().toISOString();

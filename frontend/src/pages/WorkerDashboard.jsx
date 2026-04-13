@@ -141,6 +141,24 @@ function TaskCard({ task, onAction, isPool, onClaim, hideActions, isOnBreak }) {
   const overtime = task.deadline_at && new Date() > new Date(task.deadline_at);
 
   const handleAction = async (action, pauseReason, note) => {
+    if (action === 'pause' && pauseReason === 'Machine issue') {
+      try {
+        setLoading(true);
+        await api.post('/requests', {
+          type: 'breakdown',
+          data: { task_id: task.id, machine_id: task.machine_id, note }
+        });
+        toast.success('Machine breakdown request sent to supervisor');
+        onAction();
+        return;
+      } catch (err) {
+        toast.error(err.response?.data?.error || 'Failed to report breakdown');
+        return;
+      } finally {
+        setLoading(false);
+      }
+    }
+
     setLoading(true);
     try {
       await api.put(`/tasks/${task.id}`, { action, pause_reason: pauseReason, note });
@@ -182,8 +200,9 @@ function TaskCard({ task, onAction, isPool, onClaim, hideActions, isOnBreak }) {
 
       <div className="flex items-center gap-4 text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-5">
         {task.machine_name && (
-          <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-md text-zinc-700 dark:text-zinc-300">
-            <Cpu size={12} className="text-zinc-400" /> {task.machine_name}
+          <span className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${task.machine_status === 'breakdown' ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'}`}>
+            <Cpu size={12} className={task.machine_status === 'breakdown' ? 'text-red-500' : 'text-zinc-400'} /> {task.machine_name}
+            {task.machine_status === 'breakdown' && <span className="ml-1 flex items-center gap-1 font-bold text-[10px] uppercase text-red-600"><AlertTriangle size={10} /> Machine Broken</span>}
           </span>
         )}
         <span className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400">
@@ -206,10 +225,10 @@ function TaskCard({ task, onAction, isPool, onClaim, hideActions, isOnBreak }) {
         <>
           {isPool ? (
             <button
-              className={`btn-primary w-full py-3 ${isOnBreak ? 'opacity-50 cursor-not-allowed' : ''}`}
-              onClick={() => !isOnBreak && onClaim()}
-              disabled={loading || isOnBreak}
-              title={isOnBreak ? 'Cannot accept new tasks while on break or working' : ''}
+              className={`btn-primary w-full py-3 ${isOnBreak || task.machine_status === 'breakdown' ? 'opacity-50 cursor-not-allowed' : ''}`}
+              onClick={() => !isOnBreak && task.machine_status !== 'breakdown' && onClaim()}
+              disabled={loading || isOnBreak || task.machine_status === 'breakdown'}
+              title={isOnBreak ? 'Cannot accept new tasks while on break or working' : task.machine_status === 'breakdown' ? 'Cannot claim: Machine is broken' : ''}
             >
               {loading ? <Loader2 size={16} className="animate-spin mr-1" /> : <Play size={16} className="mr-1" />}
               {t('accept_task')}
@@ -223,10 +242,10 @@ function TaskCard({ task, onAction, isPool, onClaim, hideActions, isOnBreak }) {
             <div className="flex gap-2">
               {(task.status === 'not_started' || task.status === 'paused') && (
                 <button
-                  className={`btn-success flex-1 justify-center py-3 ${isOnBreak ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  onClick={() => !isOnBreak && handleAction('start')}
-                  disabled={loading || isOnBreak}
-                  title={isOnBreak ? 'Cannot resume while on break' : ''}
+                  className={`btn-success flex-1 justify-center py-3 ${isOnBreak || task.machine_status === 'breakdown' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  onClick={() => !isOnBreak && task.machine_status !== 'breakdown' && handleAction('start')}
+                  disabled={loading || isOnBreak || task.machine_status === 'breakdown'}
+                  title={isOnBreak ? 'Cannot resume while on break' : task.machine_status === 'breakdown' ? 'Machine is broken' : ''}
                 >
                   {loading ? <Loader2 size={16} className="animate-spin mr-1" /> : <Play size={16} className="mr-1" />}
                   {task.status === 'paused' ? t('resume_task') : t('start_task')}
@@ -237,7 +256,7 @@ function TaskCard({ task, onAction, isPool, onClaim, hideActions, isOnBreak }) {
                   {loading ? <Loader2 size={16} className="animate-spin mr-1" /> : <Pause size={16} className="mr-1" />}
                   {t('pause_task')}
                 </button>
-                <button className="btn-success flex-1 justify-center py-3" onClick={() => handleAction('complete')} disabled={loading}>
+                <button className={`btn-success flex-1 justify-center py-3 ${task.machine_status === 'breakdown' ? 'opacity-50 cursor-not-allowed' : ''}`} onClick={() => task.machine_status !== 'breakdown' && handleAction('complete')} disabled={loading || task.machine_status === 'breakdown'}>
                   {loading ? <Loader2 size={16} className="animate-spin mr-1" /> : <CheckCircle size={16} className="mr-1" />}
                   {t('done')}
                 </button>
@@ -263,6 +282,14 @@ export default function WorkerDashboard() {
   const [breakStatus, setBreakStatus] = useState({ is_on_break: false, already_taken_today: false });
   const [breakProgress, setBreakProgress] = useState(0);
   const [breakTimeLeft, setBreakTimeLeft] = useState('');
+  const [pendingRequests, setPendingRequests] = useState([]);
+
+  const fetchRequests = useCallback(async () => {
+    try {
+      const res = await api.get('/requests');
+      setPendingRequests(res.data.filter(r => r.status === 'pending'));
+    } catch { }
+  }, []);
 
   useEffect(() => {
     if (!breakStatus.is_on_break || !breakStatus.current_break) return;
@@ -291,9 +318,20 @@ export default function WorkerDashboard() {
   }, []);
 
   const handleBreak = async (action) => {
+    if (action === 'start') {
+      try {
+        await api.post('/requests', { type: 'break' });
+        toast.success('Break request sent to supervisor');
+        fetchRequests();
+      } catch (err) {
+        toast.error(err.response?.data?.error || 'Failed to send break request');
+      }
+      return;
+    }
+
     try {
       await api.post(`/breaks/${action}`);
-      toast.success(action === 'start' ? t('on_break') : t('active'));
+      toast.success(t('active'));
       fetchBreakStatus();
       fetchTasks();
     } catch (err) {
@@ -318,21 +356,30 @@ export default function WorkerDashboard() {
     } catch (err) { toast.error('Claim failed'); }
   };
 
-  useEffect(() => { fetchTasks(); fetchBreakStatus(); }, [fetchTasks, fetchBreakStatus]);
+  useEffect(() => { fetchTasks(); fetchBreakStatus(); fetchRequests(); }, [fetchTasks, fetchBreakStatus, fetchRequests]);
   useEffect(() => {
     if (!socket) return;
-    socket.on('task:updated', fetchTasks);
+    socket.on('task:updated', () => { fetchTasks(); fetchRequests(); });
     socket.on('task:deleted', fetchTasks);
+    socket.on('request:new', fetchRequests);
+    socket.on('request:updated', () => {
+      fetchRequests();
+      fetchTasks();
+      fetchBreakStatus();
+    });
     socket.on('user:status', (data) => {
       if (data.userId === user?.id) {
         fetchBreakStatus();
+        fetchRequests();
       }
       fetchTasks();
     });
     socket.on('notification:new', n => toast(n.message, { icon: 'ℹ️' }));
     return () => {
-      socket.off('task:updated', fetchTasks);
-      socket.off('task:deleted', fetchTasks);
+      socket.off('task:updated');
+      socket.off('task:deleted');
+      socket.off('request:new');
+      socket.off('request:updated');
       socket.off('user:status');
       socket.off('notification:new');
     };
@@ -357,6 +404,15 @@ export default function WorkerDashboard() {
                   <Play size={18} className="mr-2" /> {t('end_break')}
                 </button>
                 <ProgressBar progress={breakProgress} color="bg-emerald-500" sublabel={breakTimeLeft} />
+              </div>
+            ) : pendingRequests.some(r => r.type === 'break') ? (
+              <div className="flex flex-col items-end gap-2 min-w-[200px]">
+                <button
+                  className="px-6 py-3 font-bold rounded-xl border bg-amber-50 dark:bg-amber-500/10 text-amber-600 border-amber-200 dark:border-amber-500/20 cursor-wait w-full flex items-center justify-center animate-pulse"
+                  disabled
+                >
+                  <Clock size={18} className="mr-2" /> Pending Approval
+                </button>
               </div>
             ) : (
               <button
