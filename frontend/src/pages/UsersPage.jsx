@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useSocket } from '../context/SocketContext';
-import { Plus, Trash2, X, Loader2, Shield, UserCog, HardHat, Circle, Users } from 'lucide-react';
+import { Plus, Trash2, X, Loader2, Shield, UserCog, HardHat, Circle, Users, Eye, ShieldCheck } from 'lucide-react';
 
-const ROLE_ICONS = { admin: Shield, supervisor: UserCog, worker: HardHat };
+const ROLE_ICONS = { admin: Shield, supervisor: UserCog, worker: HardHat, monitor: Eye };
 const ROLE_COLORS = {
   admin: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/20',
   supervisor: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20',
   worker: 'bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-500/10 dark:text-zinc-400 dark:border-zinc-500/20',
+  monitor: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20',
 };
 
 const STATUS_COLORS = {
@@ -57,10 +58,14 @@ function AddUserModal({ onClose, onSave }) {
           </div>
           <div>
             <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Role <span className="text-red-500">*</span></label>
-            <select className="select" value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}>
-              <option value="worker">Worker</option>
+            <select
+              className="select"
+              value={form.role}
+              onChange={e => setForm({ ...form, role: e.target.value })}
+            >
               <option value="supervisor">Supervisor</option>
-              <option value="admin">Admin</option>
+              <option value="worker">Worker</option>
+              <option value="monitor">Monitor</option>
             </select>
           </div>
           <div className="flex gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800 mt-4">
@@ -158,9 +163,15 @@ export default function UsersPage() {
                     {u.role}
                   </span>
                 </div>
-                <button onClick={() => deleteUser(u.id)} className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors opacity-0 group-hover:opacity-100 sm:opacity-100">
-                  <Trash2 size={16} />
-                </button>
+                {u.email !== 'admin@shopfloor.com' ? (
+                  <button onClick={() => deleteUser(u.id)} className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors opacity-0 group-hover:opacity-100 sm:opacity-100">
+                    <Trash2 size={18} />
+                  </button>
+                ) : (
+                  <div className="p-1.5 text-zinc-300 dark:text-zinc-700 cursor-help" title="Primary Admin is protected">
+                    <ShieldCheck size={18} />
+                  </div>
+                )}
               </div>
             );
           })}

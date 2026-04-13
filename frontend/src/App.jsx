@@ -13,6 +13,8 @@ import WorkerDashboard from './pages/WorkerDashboard';
 import AnalyticsPage from './pages/AnalyticsPage';
 import UsersPage from './pages/UsersPage';
 import RequestsPage from './pages/RequestsPage';
+import LogsPage from './pages/LogsPage';
+import ProfilePage from './pages/ProfilePage';
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, loading } = useAuth();
@@ -53,10 +55,9 @@ function AppRoutes() {
       <Route path="/login" element={user ? (
         user.role === 'admin' ? <Navigate to="/admin" /> :
           user.role === 'supervisor' ? <Navigate to="/supervisor" /> :
-            <Navigate to="/worker" />
+            user.role === 'monitor' ? <Navigate to="/analytics" /> :
+              <Navigate to="/worker" />
       ) : <Login />} />
-
-      <Route path="/register" element={user ? <Navigate to="/login" /> : <Register />} />
 
       {/* Admin */}
       <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><Layout><AdminDashboard /></Layout></ProtectedRoute>} />
@@ -75,6 +76,11 @@ function AppRoutes() {
 
       {/* Worker */}
       <Route path="/worker" element={<ProtectedRoute allowedRoles={['worker']}><Layout><WorkerDashboard /></Layout></ProtectedRoute>} />
+
+      {/* Monitor */}
+      <Route path="/analytics" element={<ProtectedRoute allowedRoles={['admin', 'supervisor', 'monitor']}><Layout><AnalyticsPage /></Layout></ProtectedRoute>} />
+      <Route path="/logs" element={<ProtectedRoute allowedRoles={['admin', 'supervisor', 'monitor']}><Layout><LogsPage /></Layout></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute><Layout><ProfilePage /></Layout></ProtectedRoute>} />
 
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="*" element={<Navigate to="/login" replace />} />

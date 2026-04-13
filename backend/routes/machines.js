@@ -48,9 +48,9 @@ router.put('/:id', auth, (req, res) => {
   res.json(machine);
 });
 
-// POST mark machine as repaired (Admin/Supervisor)
+// POST mark machine as repaired (Supervisor only)
 router.post('/:id/repair', auth, (req, res) => {
-  if (req.user.role === 'worker') return res.status(403).json({ error: 'Forbidden' });
+  if (req.user.role !== 'supervisor') return res.status(403).json({ error: 'Repairing machines is restricted to supervisors only.' });
 
   const now = new Date().toISOString();
   db.prepare("UPDATE machines SET status = 'idle', idle_since = ?, last_active_at = NULL WHERE id = ?").run(now, req.params.id);

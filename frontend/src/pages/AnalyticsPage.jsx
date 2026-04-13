@@ -5,6 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend
 } from 'recharts';
+import { toast } from 'react-hot-toast';
 
 export default function AnalyticsPage() {
   const [data, setData] = useState(null);
@@ -16,7 +17,10 @@ export default function AnalyticsPage() {
       const [sRes, dRes] = await Promise.all([api.get('/analytics/summary'), api.get('/analytics/downtime')]);
       setData(sRes.data);
       setDowntime(dRes.data);
-    } catch { }
+    } catch (err) {
+      console.error('Analytics Fetch Error:', err);
+      toast.error('Failed to load analytics data');
+    }
     setLoading(false);
   }, []);
 
@@ -73,17 +77,19 @@ export default function AnalyticsPage() {
             <Users size={16} className="text-blue-500" /> Worker Efficiency
           </h3>
           {workerChartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={workerChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="name" tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip cursor={{ fill: 'var(--border)', opacity: 0.2 }} contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)' }} />
-                <Bar dataKey="completed" fill="#10b981" radius={[4, 4, 0, 0]} name="Completed" />
-                <Bar dataKey="delayed" fill="#ef4444" radius={[4, 4, 0, 0]} name="Delayed" />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="h-[220px] w-full relative min-h-[220px]">
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={workerChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <Tooltip cursor={{ fill: 'var(--border)', opacity: 0.2 }} contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)' }} />
+                  <Bar dataKey="completed" fill="#10b981" radius={[4, 4, 0, 0]} name="Completed" />
+                  <Bar dataKey="delayed" fill="#ef4444" radius={[4, 4, 0, 0]} name="Delayed" />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           ) : <p className="text-zinc-500 text-center py-8">No data yet</p>}
         </div>
 
@@ -93,17 +99,19 @@ export default function AnalyticsPage() {
             <Cpu size={16} className="text-blue-500" /> Machine Utilization
           </h3>
           {machineChartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={machineChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="name" tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip cursor={{ fill: 'var(--border)', opacity: 0.2 }} contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)' }} />
-                <Bar dataKey="tasks" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Total Tasks" />
-                <Bar dataKey="completed" fill="#10b981" radius={[4, 4, 0, 0]} name="Completed" />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="h-[220px] w-full relative min-h-[220px]">
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={machineChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <Tooltip cursor={{ fill: 'var(--border)', opacity: 0.2 }} contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)' }} />
+                  <Bar dataKey="tasks" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Total Tasks" />
+                  <Bar dataKey="completed" fill="#10b981" radius={[4, 4, 0, 0]} name="Completed" />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           ) : <p className="text-zinc-500 text-center py-8">No data yet</p>}
         </div>
       </div>
@@ -114,15 +122,17 @@ export default function AnalyticsPage() {
           <h3 className="font-bold mb-6 flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
             <TrendingDown size={16} className="text-amber-500" /> Downtime Cause Analysis
           </h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={pauseData} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-              <XAxis type="number" tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="name" tick={{ fill: 'var(--muted)', fontSize: 11 }} width={160} axisLine={false} tickLine={false} />
-              <Tooltip cursor={{ fill: 'var(--border)', opacity: 0.2 }} contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)' }} />
-              <Bar dataKey="count" fill="#f59e0b" radius={[0, 4, 4, 0]} name="Occurrences" />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="h-[200px] w-full relative min-h-[200px]">
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={pauseData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                <XAxis type="number" tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={{ fill: 'var(--muted)', fontSize: 11 }} width={160} axisLine={false} tickLine={false} />
+                <Tooltip cursor={{ fill: 'var(--border)', opacity: 0.2 }} contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)' }} />
+                <Bar dataKey="count" fill="#f59e0b" radius={[0, 4, 4, 0]} name="Occurrences" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       )}
 

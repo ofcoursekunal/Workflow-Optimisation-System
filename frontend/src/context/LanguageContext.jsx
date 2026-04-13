@@ -132,6 +132,8 @@ const translations = {
         break_taken: 'ब्रेक लिया गया',
         break_limit_reached: 'दैनिक ब्रेक सीमा समाप्त',
         requests: 'अनुरोध',
+        logs: 'लॉग्स',
+        monitor: 'मॉनिटर',
     }
 };
 

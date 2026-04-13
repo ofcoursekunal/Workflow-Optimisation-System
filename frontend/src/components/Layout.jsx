@@ -9,7 +9,8 @@ import api from '../utils/api';
 import toast from 'react-hot-toast';
 import {
   Factory, LayoutDashboard, Cpu, ClipboardList, Users, BarChart3,
-  Bell, LogOut, Menu, X, Wifi, WifiOff, Sun, Moon, Languages, Coffee
+  Bell, LogOut, Menu, X, Wifi, WifiOff, Sun, Moon, Languages, Coffee, User,
+  History as HistoryIcon
 } from 'lucide-react';
 
 export default function Layout({ children }) {
@@ -31,6 +32,7 @@ export default function Layout({ children }) {
       { path: '/admin/machines', label: t('machines'), icon: Cpu },
       { path: '/admin/users', label: t('users'), icon: Users },
       { path: '/admin/analytics', label: t('analytics'), icon: BarChart3 },
+      { path: '/logs', label: t('logs'), icon: HistoryIcon },
     ],
     supervisor: [
       { path: '/supervisor', label: t('dashboard'), icon: LayoutDashboard },
@@ -38,9 +40,14 @@ export default function Layout({ children }) {
       { path: '/supervisor/machines', label: t('machines'), icon: Cpu },
       { path: '/supervisor/analytics', label: t('analytics'), icon: BarChart3 },
       { path: '/supervisor/requests', label: t('requests'), icon: Coffee },
+      { path: '/logs', label: t('logs'), icon: HistoryIcon },
     ],
     worker: [
       { path: '/worker', label: t('my_tasks'), icon: ClipboardList },
+    ],
+    monitor: [
+      { path: '/analytics', label: t('analytics'), icon: BarChart3 },
+      { path: '/logs', label: t('logs'), icon: HistoryIcon },
     ],
   };
 
@@ -131,6 +138,10 @@ export default function Layout({ children }) {
               : <><WifiOff size={14} className="text-red-500" /><span className="text-red-600 dark:text-red-500">{t('disconnected')}</span></>
             }
           </div>
+          <Link to="/profile" className={`sidebar-item w-full ${location.pathname === '/profile' ? 'active' : ''}`} onClick={() => setSidebarOpen(false)}>
+            <User size={18} />
+            Profile Settings
+          </Link>
           <button onClick={handleLogout} className="sidebar-item w-full text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/30 font-medium">
             <LogOut size={18} />
             {t('sign_out')}

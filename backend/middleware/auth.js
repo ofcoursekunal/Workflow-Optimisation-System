@@ -9,8 +9,10 @@ module.exports = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
+    console.log('Auth Middleware: Decoded user:', decoded.id, decoded.email);
     next();
   } catch (err) {
+    console.warn('Auth Middleware: Invalid token:', err.message);
     res.status(403).json({ error: 'Invalid or expired token.' });
   }
 };

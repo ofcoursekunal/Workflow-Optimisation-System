@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { Plus, Edit2, Trash2, X, Loader2, Clock, Cpu, RefreshCw } from 'lucide-react';
 
 function MachineCard({ machine, canEdit, onEdit, onDelete }) {
+  const { user } = useAuth();
   const statusCls = {
     running: 'border-l-4 border-l-emerald-500 border-t-zinc-200 border-r-zinc-200 border-b-zinc-200 dark:border-t-zinc-800 dark:border-r-zinc-800 dark:border-b-zinc-800 bg-white dark:bg-zinc-900',
     idle: 'border-l-4 border-l-amber-500 border-t-zinc-200 border-r-zinc-200 border-b-zinc-200 dark:border-t-zinc-800 dark:border-r-zinc-800 dark:border-b-zinc-800 bg-white dark:bg-zinc-900',
@@ -54,7 +55,7 @@ function MachineCard({ machine, canEdit, onEdit, onDelete }) {
         )}
       </div>
 
-      {machine.status === 'breakdown' && canEdit && (
+      {machine.status === 'breakdown' && user?.role === 'supervisor' && (
         <button
           onClick={handleRepair}
           className="w-full mb-4 py-2 text-xs font-bold uppercase tracking-widest bg-red-500 hover:bg-red-600 text-white rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2"

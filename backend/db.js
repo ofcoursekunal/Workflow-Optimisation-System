@@ -15,7 +15,7 @@ db.exec(`
     name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('admin','supervisor','worker')),
+    role TEXT NOT NULL CHECK(role IN ('admin','supervisor','worker','monitor')),
     status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle','busy','paused')),
     is_on_break INTEGER DEFAULT 0,
     last_idle_at DATETIME,
@@ -90,5 +90,12 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
+
+const bcrypt = require('bcryptjs');
+const adminExists = db.prepare("SELECT id FROM users WHERE role = 'admin'").get();
+if (!adminExists) {
+  const hash = bcrypt.hashSync('Admin@123', 10);
+  db.prepare('INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)').run('Default Admin', 'admin@shopfloor.com', hash, 'admin');
+}
 
 module.exports = db;
