@@ -54,7 +54,9 @@ export function AuthProvider({ children }) {
   const getImageUrl = (path) => {
     if (!path) return null;
     const base = api.defaults.baseURL.replace('/api', '');
-    return `${base}${path}`;
+    const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
+    const cleanPath = path.startsWith('/') ? path : '/' + path;
+    return `${cleanBase}${cleanPath}`;
   };
 
   return (

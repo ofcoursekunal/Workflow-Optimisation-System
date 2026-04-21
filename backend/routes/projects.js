@@ -26,6 +26,19 @@ function recordUnassignment(userId, projectId) {
     } catch (e) { }
 }
 
+function recordMachineAssignment(machineId, projectId) {
+    try {
+        db.prepare('INSERT INTO machine_project_history (machine_id, project_id) VALUES (?, ?)').run(machineId, projectId);
+    } catch (e) { }
+}
+
+function recordMachineUnassignment(machineId, projectId) {
+    try {
+        db.prepare('UPDATE machine_project_history SET unassigned_at = CURRENT_TIMESTAMP WHERE machine_id = ? AND project_id = ? AND unassigned_at IS NULL').run(machineId, projectId);
+    } catch (e) { }
+}
+
+
 // GET all projects
 router.get('/', auth, (req, res) => {
     try {
@@ -40,35 +53,61 @@ router.get('/', auth, (req, res) => {
         const params = [];
 
         if (req.user.role === 'worker' || req.user.role === 'supervisor') {
-            if (!req.user.project_id) return res.json([]);
-            query += " WHERE p.id = ?";
-            params.push(req.user.project_id);
+            query += ` WHERE p.id IN (
+                SELECT project_id FROM user_project_history WHERE user_id = ?
+                UNION
+                SELECT project_id FROM users WHERE id = ? AND project_id IS NOT NULL
+            )`;
+            params.push(req.user.id, req.user.id);
         }
 
         query += " ORDER BY p.created_at DESC";
         const projects = db.prepare(query).all(...params);
         res.json(projects);
     } catch (err) {
+        console.error('API Error:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
-// GET /api/projects/my-history (MUST BE BEFORE /:id)
 router.get('/my-history', auth, (req, res) => {
     try {
-        const history = db.prepare(`
-            SELECT h.*, p.name as project_name, p.description as project_description,
-                (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.assigned_worker_id = h.user_id AND t.status = 'completed') as completedTasks
-            FROM user_project_history h
-            JOIN projects p ON h.project_id = p.id
-            WHERE h.user_id = ?
-            ORDER BY h.assigned_at DESC
-        `).all(req.user.id);
+        let query;
+        let params = [req.user.id];
+
+        if (req.user.role === 'admin' || req.user.role === 'supervisor') {
+            query = `
+                SELECT 
+                    p.id as project_id, 
+                    p.name as project_name, 
+                    p.description as project_description,
+                    p.created_at as assigned_at, -- Using project creation as start for admin view
+                    NULL as unassigned_at,
+                    (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'completed') as completedTasks
+                FROM projects p
+                WHERE p.status = 'completed'
+                ORDER BY p.created_at DESC
+            `;
+            params = [];
+        } else {
+            query = `
+                SELECT h.*, p.name as project_name, p.description as project_description,
+                    (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.assigned_worker_id = h.user_id AND t.status = 'completed') as completedTasks
+                FROM user_project_history h
+                JOIN projects p ON h.project_id = p.id
+                WHERE h.user_id = ?
+                ORDER BY h.assigned_at DESC
+            `;
+        }
+
+        const history = db.prepare(query).all(...params);
         res.json(history);
     } catch (err) {
+        console.error('API Error:', err);
         res.status(500).json({ error: err.message });
     }
 });
+
 
 // GET project details
 router.get('/:id', auth, (req, res) => {
@@ -76,8 +115,11 @@ router.get('/:id', auth, (req, res) => {
         const projectId = req.params.id;
 
         if (req.user.role === 'worker' || req.user.role === 'supervisor') {
-            if (Number(projectId) !== Number(req.user.project_id)) {
-                return res.status(403).json({ error: 'Access denied: You can only view details for your assigned project.' });
+            const isAssigned = Number(projectId) === Number(req.user.project_id);
+            const inHistory = db.prepare('SELECT id FROM user_project_history WHERE user_id = ? AND project_id = ?').get(req.user.id, projectId);
+
+            if (!isAssigned && !inHistory) {
+                return res.status(403).json({ error: 'Access denied: You can only view details for projects you are or were assigned to.' });
             }
         }
 
@@ -89,10 +131,65 @@ router.get('/:id', auth, (req, res) => {
         const supervisors = users.filter(u => u.role === 'supervisor');
 
         const machines = db.prepare('SELECT id, name, type, status FROM machines WHERE project_id = ?').all(project.id);
-        const tasks = db.prepare('SELECT id, title, status, priority FROM tasks WHERE project_id = ?').all(project.id);
+        const tasks = db.prepare('SELECT id, title, status, priority, started_at, completed_at, expected_minutes FROM tasks WHERE project_id = ?').all(project.id);
 
-        res.json({ ...project, workers, supervisors, machines, tasks });
+        // Fetch user history for the project
+        const userHistory = db.prepare(`
+            SELECT h.*, u.name, u.role, u.profile_picture 
+            FROM user_project_history h
+            JOIN users u ON h.user_id = u.id
+            WHERE h.project_id = ?
+        `).all(project.id);
+
+        // Fetch machine history for the project
+        const machineHistory = db.prepare(`
+            SELECT h.*, m.name, m.type
+            FROM machine_project_history h
+            JOIN machines m ON h.machine_id = m.id
+            WHERE h.project_id = ?
+        `).all(project.id);
+
+        // Calculate Stats
+        const stats = {
+            taskCounts: {
+                total: tasks.length,
+                completed: tasks.filter(t => t.status === 'completed').length,
+                delayed: tasks.filter(t => t.status === 'delayed').length,
+            },
+            teamSize: new Set(userHistory.map(h => h.user_id)).size,
+            machineUsage: new Set(machineHistory.map(h => h.machine_id)).size,
+            efficiency: 0, // Percetange of tasks completed within/under expected time
+        };
+
+        if (stats.taskCounts.completed > 0) {
+            const completedWithTime = tasks.filter(t => t.status === 'completed' && t.started_at && t.completed_at);
+            if (completedWithTime.length > 0) {
+                let totalActualMins = 0;
+                let totalExpectedMins = 0;
+                completedWithTime.forEach(t => {
+                    const actual = Math.max(1, (new Date(t.completed_at) - new Date(t.started_at)) / 60000); // Min 1 min
+                    totalActualMins += actual;
+                    totalExpectedMins += t.expected_minutes;
+                });
+                stats.efficiency = totalActualMins > 0 ? Math.min(100, Math.round((totalExpectedMins / totalActualMins) * 100)) : 100;
+            } else {
+                stats.efficiency = 100; // Default
+            }
+        }
+
+        res.json({
+            ...project,
+            workers,
+            supervisors,
+            machines,
+            tasks,
+            userHistory,
+            machineHistory,
+            stats
+        });
+
     } catch (err) {
+        console.error('API Error:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -133,8 +230,10 @@ router.post('/', auth, (req, res) => {
             if (machineIds && Array.isArray(machineIds)) {
                 for (const mid of machineIds) {
                     db.prepare('UPDATE machines SET project_id = ? WHERE id = ?').run(projectId, mid);
+                    recordMachineAssignment(mid, projectId);
                 }
             }
+
         });
 
         createProj();
@@ -203,15 +302,61 @@ router.put('/:id', auth, (req, res) => {
             }
 
             if (machineIds && Array.isArray(machineIds)) {
+                const currentMachines = db.prepare("SELECT id FROM machines WHERE project_id = ?").all(projectId);
+                const removedMachines = currentMachines.filter(cm => !machineIds.includes(cm.id));
+                removedMachines.forEach(rm => recordMachineUnassignment(rm.id, projectId));
+
                 db.prepare('UPDATE machines SET project_id = NULL WHERE project_id = ?').run(projectId);
                 for (const mid of machineIds) {
                     db.prepare('UPDATE machines SET project_id = ? WHERE id = ?').run(projectId, mid);
+                    const existing = db.prepare('SELECT id FROM machine_project_history WHERE machine_id = ? AND project_id = ? AND unassigned_at IS NULL').get(mid, projectId);
+                    if (!existing) recordMachineAssignment(mid, projectId);
                 }
             }
+
         });
         updateProj();
         res.json({ success: true });
     } catch (err) {
+        console.error('API Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/projects/:id/complete
+router.post('/:id/complete', auth, (req, res) => {
+    if (req.user.role === 'worker') return res.status(403).json({ error: 'Only admins and supervisors can complete projects.' });
+
+    const projectId = req.params.id;
+    try {
+        const completeProj = db.transaction(() => {
+            // Update project status
+            db.prepare("UPDATE projects SET status = 'completed' WHERE id = ?").run(projectId);
+
+            // Record unassignments for everyone
+            const users = db.prepare('SELECT id FROM users WHERE project_id = ?').all(projectId);
+            users.forEach(u => recordUnassignment(u.id, projectId));
+
+            const machines = db.prepare('SELECT id FROM machines WHERE project_id = ?').all(projectId);
+            machines.forEach(m => recordMachineUnassignment(m.id, projectId));
+
+            // Actually unassign
+            db.prepare('UPDATE users SET project_id = NULL WHERE project_id = ?').run(projectId);
+            db.prepare('UPDATE machines SET project_id = NULL WHERE project_id = ?').run(projectId);
+
+            // Notify everyone
+            const proj = db.prepare('SELECT name FROM projects WHERE id = ?').get(projectId);
+            const msg = `Project ${proj.name} has been marked as completed. All resources have been released.`;
+            users.forEach(u => {
+                createNotification(u.id, msg, 'success');
+                emitNotification(req, u.id, msg, 'success');
+            });
+        });
+
+        completeProj();
+        res.json({ success: true });
+    } catch (err) {
+        console.error('API Error:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -222,9 +367,96 @@ router.delete('/:id', auth, (req, res) => {
     try {
         const projectId = req.params.id;
         db.prepare('UPDATE user_project_history SET unassigned_at = CURRENT_TIMESTAMP WHERE project_id = ? AND unassigned_at IS NULL').run(projectId);
+        db.prepare('UPDATE machine_project_history SET unassigned_at = CURRENT_TIMESTAMP WHERE project_id = ? AND unassigned_at IS NULL').run(projectId);
+        db.prepare('UPDATE users SET project_id = NULL WHERE project_id = ?').run(projectId);
+        db.prepare('UPDATE machines SET project_id = NULL, status = "idle" WHERE project_id = ?').run(projectId);
         db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
         res.json({ success: true });
     } catch (err) {
+        console.error('API Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST unassign specific user
+router.post('/:id/unassign-user', auth, (req, res) => {
+    if (req.user.role !== 'admin' && req.user.role !== 'supervisor') return res.status(403).json({ error: 'Unauthorized' });
+    try {
+        const projectId = req.params.id;
+        const { userId } = req.body;
+        if (!userId) return res.status(400).json({ error: 'User ID is required' });
+
+        db.prepare('UPDATE users SET project_id = NULL WHERE id = ? AND project_id = ?').run(userId, projectId);
+        recordUnassignment(userId, projectId);
+
+        const project = db.prepare('SELECT name FROM projects WHERE id = ?').get(projectId);
+        const msg = `You have been unassigned from project: ${project?.name || 'Project'}`;
+        createNotification(userId, msg, 'info');
+        emitNotification(req, userId, msg, 'info');
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('API Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST unassign specific machine
+router.post('/:id/unassign-machine', auth, (req, res) => {
+    if (req.user.role !== 'admin' && req.user.role !== 'supervisor') return res.status(403).json({ error: 'Unauthorized' });
+    try {
+        const projectId = req.params.id;
+        const { machineId } = req.body;
+        if (!machineId) return res.status(400).json({ error: 'Machine ID is required' });
+
+        db.prepare('UPDATE machines SET project_id = NULL, status = "idle" WHERE id = ? AND project_id = ?').run(machineId, projectId);
+        recordMachineUnassignment(machineId, projectId);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('API Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+// POST assign specific user
+router.post('/:id/assign-user', auth, (req, res) => {
+    if (req.user.role !== 'admin' && req.user.role !== 'supervisor') return res.status(403).json({ error: 'Unauthorized' });
+    try {
+        const projectId = req.params.id;
+        const { userId } = req.body;
+        if (!userId) return res.status(400).json({ error: 'User ID is required' });
+
+        db.prepare('UPDATE users SET project_id = ? WHERE id = ?').run(projectId, userId);
+        recordAssignment(userId, projectId);
+
+        const project = db.prepare('SELECT name FROM projects WHERE id = ?').get(projectId);
+        const msg = `You have been assigned to project: ${project?.name || 'Project'}`;
+        createNotification(userId, msg, 'info');
+        emitNotification(req, userId, msg, 'info');
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('API Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST assign specific machine
+router.post('/:id/assign-machine', auth, (req, res) => {
+    if (req.user.role !== 'admin' && req.user.role !== 'supervisor') return res.status(403).json({ error: 'Unauthorized' });
+    try {
+        const projectId = req.params.id;
+        const { machineId } = req.body;
+        if (!machineId) return res.status(400).json({ error: 'Machine ID is required' });
+
+        db.prepare('UPDATE machines SET project_id = ?, status = "busy" WHERE id = ?').run(projectId, machineId);
+        recordMachineAssignment(machineId, projectId);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('API Error:', err);
         res.status(500).json({ error: err.message });
     }
 });

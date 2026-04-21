@@ -309,6 +309,7 @@ export default function WorkerDashboard() {
   const [tasks, setTasks] = useState([]);
   const [poolTasks, setPoolTasks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [projectName, setProjectName] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [breakStatus, setBreakStatus] = useState({ is_on_break: false, already_taken_today: false });
   const [breakProgress, setBreakProgress] = useState(0);
@@ -379,6 +380,13 @@ export default function WorkerDashboard() {
     setLoading(false);
   }, []);
 
+  const fetchSummary = useCallback(async () => {
+    try {
+      const res = await api.get('/analytics/summary');
+      setProjectName(res.data.projectName);
+    } catch { }
+  }, []);
+
   const handleClaim = async (taskId) => {
     try {
       await api.put(`/tasks/${taskId}/claim`);
@@ -387,7 +395,7 @@ export default function WorkerDashboard() {
     } catch (err) { toast.error('Claim failed'); }
   };
 
-  useEffect(() => { fetchTasks(); fetchBreakStatus(); fetchRequests(); }, [fetchTasks, fetchBreakStatus, fetchRequests]);
+  useEffect(() => { fetchTasks(); fetchBreakStatus(); fetchRequests(); fetchSummary(); }, [fetchTasks, fetchBreakStatus, fetchRequests, fetchSummary]);
   useEffect(() => {
     if (!socket) return;
     socket.on('task:updated', () => { fetchTasks(); fetchRequests(); });
@@ -435,6 +443,15 @@ export default function WorkerDashboard() {
             <div>
               <p className="text-zinc-400 text-sm font-semibold uppercase tracking-widest">{t('welcome')}</p>
               <h1 className="text-3xl font-extrabold text-zinc-900 dark:text-white mt-1 tracking-tight">{user?.name}</h1>
+              {projectName && (
+                <div className="mt-4 flex items-center gap-2 group">
+                  <div className="w-1 h-6 bg-blue-500 rounded-full group-hover:scale-y-125 transition-transform" />
+                  <div>
+                    <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em] leading-none mb-1">Active Project</p>
+                    <p className="text-xl font-black text-zinc-800 dark:text-zinc-100 tracking-tight leading-none">{projectName}</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-4">

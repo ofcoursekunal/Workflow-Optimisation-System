@@ -98,6 +98,14 @@ db.exec(`
     assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     unassigned_at DATETIME
   );
+
+  CREATE TABLE IF NOT EXISTS machine_project_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    machine_id INTEGER NOT NULL REFERENCES machines(id),
+    project_id INTEGER NOT NULL REFERENCES projects(id),
+    assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    unassigned_at DATETIME
+  );
 `);
 
 const bcrypt = require('bcryptjs');

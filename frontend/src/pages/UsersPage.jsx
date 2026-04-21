@@ -25,16 +25,11 @@ const STATUS_COLORS = {
 };
 
 function AddUserModal({ onClose, onSave }) {
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'worker', project_id: '' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'worker' });
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [projects, setProjects] = useState([]);
   const fileInputRef = useRef(null);
-
-  useEffect(() => {
-    api.get('/projects').then(res => setProjects(res.data)).catch(() => { });
-  }, []);
 
   const handleFileChange = e => {
     const selectedFile = e.target.files[0];
@@ -53,7 +48,6 @@ function AddUserModal({ onClose, onSave }) {
       formData.append('email', form.email);
       formData.append('password', form.password);
       formData.append('role', form.role);
-      if (form.project_id) formData.append('project_id', form.project_id);
       if (file) formData.append('profile_picture', file);
 
       await api.post('/users', formData);
@@ -121,19 +115,7 @@ function AddUserModal({ onClose, onSave }) {
               <option value="monitor">Monitor</option>
             </select>
           </div>
-          <div>
-            <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Assign Project</label>
-            <select
-              className="select"
-              value={form.project_id}
-              onChange={e => setForm({ ...form, project_id: e.target.value })}
-            >
-              <option value="">— No Project —</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
+
           <div className="flex gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800 mt-4">
             <button type="submit" className="btn-primary flex-1 justify-center py-2.5" disabled={loading}>
               {loading ? <Loader2 size={16} className="animate-spin mr-2" /> : null}
@@ -316,9 +298,16 @@ export default function UsersPage() {
                       <p className="font-bold text-zinc-900 dark:text-zinc-100 truncate tracking-tight text-base leading-tight">{u.name}</p>
                       {isExpanded ? <ChevronDown size={16} className="text-zinc-400" /> : <ChevronRight size={16} className="text-zinc-400" />}
                     </div>
-                    <span className={`inline-block text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md border mt-1 ${ROLE_COLORS[u.role]}`}>
-                      {u.role}
-                    </span>
+                    <div className="flex items-center flex-wrap gap-2 mt-1">
+                      <span className={`inline-block text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md border ${ROLE_COLORS[u.role]}`}>
+                        {u.role}
+                      </span>
+                      {u.project_id && (
+                        <span className="text-[10px] text-purple-600 dark:text-purple-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                          <Briefcase size={10} /> {projects.find(p => p.id === u.project_id)?.name}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 

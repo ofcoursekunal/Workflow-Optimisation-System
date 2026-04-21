@@ -10,9 +10,12 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE']
-  }
+    origin: ["http://localhost:3000", "http://127.0.0.1:3000"],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true
+  },
+  allowEIO3: true,
+  transports: ['websocket', 'polling']
 });
 
 // Middleware
@@ -63,6 +66,24 @@ io.on('connection', (socket) => {
 require('./services/idleDetector')(io);
 require('./services/delayDetector')(io);
 app.set('autoAssign', require('./services/autoAssign')(io));
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled Server Error:', err);
+  res.status(500).json({
+    error: 'Internal Server Error',
+    message: err.message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  });
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

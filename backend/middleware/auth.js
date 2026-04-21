@@ -9,7 +9,7 @@ module.exports = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
-    console.log('Auth Middleware: Decoded user:', decoded.id, decoded.email);
+    console.log('Auth Middleware: Decoded user:', JSON.stringify(decoded));
     next();
   } catch (err) {
     console.warn('Auth Middleware: Invalid token:', err.message);

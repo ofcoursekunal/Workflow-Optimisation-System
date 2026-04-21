@@ -12,10 +12,16 @@ export function SocketProvider({ children }) {
   useEffect(() => {
     if (!user) return;
 
-    const socket = io('http://localhost:5000', { transports: ['websocket', 'polling'] });
+    const socket = io('http://127.0.0.1:5000', {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000
+    });
     socketRef.current = socket;
 
     socket.on('connect', () => {
+      console.log('Socket connected');
       setConnected(true);
       socket.emit('join', user.id);
     });

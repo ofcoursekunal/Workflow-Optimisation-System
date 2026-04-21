@@ -4,8 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import toast from 'react-hot-toast';
 import {
-    Plus, Search, Edit2, Trash2, User, Cpu,
-    X, Loader2, AlertCircle, Clock, Briefcase, Users, Layout, History, CheckCircle
+    Plus, Search, Edit2, Trash2, User, Cpu, Activity,
+    X, Loader2, AlertCircle, Clock, Briefcase, Users, Layout, History, CheckCircle, ChevronRight
 } from 'lucide-react';
 
 function TeamAvatar({ user, getImageUrl }) {
@@ -80,7 +80,7 @@ function ProjectFormModal({ onClose, onSave, editProject, workers, supervisors, 
                         <div>
                             <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-2 uppercase tracking-wide">Assign Supervisors</label>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                {supervisors.map(s => (
+                                {supervisors.filter(s => s.project_id === null || s.project_id === editProject?.id).map(s => (
                                     <label key={s.id} className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer transition-all ${form.supervisorIds.includes(s.id) ? 'bg-blue-50 dark:bg-blue-500/10 border-blue-500/50 text-blue-700 dark:text-blue-400' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300'}`}>
                                         <input type="checkbox" className="hidden" checked={form.supervisorIds.includes(s.id)} onChange={() => setForm(p => ({ ...p, supervisorIds: toggleId(p.supervisorIds, s.id) }))} />
                                         <div className={`w-3 h-3 rounded-full border ${form.supervisorIds.includes(s.id) ? 'bg-blue-500 border-blue-500' : 'border-zinc-300'}`} />
@@ -93,7 +93,7 @@ function ProjectFormModal({ onClose, onSave, editProject, workers, supervisors, 
                         <div>
                             <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-2 uppercase tracking-wide">Assign Workers</label>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                {workers.map(w => (
+                                {workers.filter(w => w.project_id === null || w.project_id === editProject?.id).map(w => (
                                     <label key={w.id} className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer transition-all ${form.workerIds.includes(w.id) ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/50 text-emerald-700 dark:text-emerald-400' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300'}`}>
                                         <input type="checkbox" className="hidden" checked={form.workerIds.includes(w.id)} onChange={() => setForm(p => ({ ...p, workerIds: toggleId(p.workerIds, w.id) }))} />
                                         <div className={`w-3 h-3 rounded-full border ${form.workerIds.includes(w.id) ? 'bg-emerald-500 border-emerald-500' : 'border-zinc-300'}`} />
@@ -106,7 +106,7 @@ function ProjectFormModal({ onClose, onSave, editProject, workers, supervisors, 
                         <div>
                             <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-2 uppercase tracking-wide">Assign Machines</label>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                {machines.map(m => (
+                                {machines.filter(m => m.project_id === null || m.project_id === editProject?.id).map(m => (
                                     <label key={m.id} className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer transition-all ${form.machineIds.includes(m.id) ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-400 text-zinc-900 dark:text-zinc-100' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300'}`}>
                                         <input type="checkbox" className="hidden" checked={form.machineIds.includes(m.id)} onChange={() => setForm(p => ({ ...p, machineIds: toggleId(p.machineIds, m.id) }))} />
                                         <div className={`w-3 h-3 rounded-full border ${form.machineIds.includes(m.id) ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'border-zinc-300'}`} />
@@ -130,7 +130,45 @@ function ProjectFormModal({ onClose, onSave, editProject, workers, supervisors, 
     );
 }
 
-function ProjectDetailsView({ project, onClose, getImageUrl }) {
+function ProjectDetailsView({ project, onClose, onSave, getImageUrl, allWorkers, allSupervisors, allMachines }) {
+    const { user } = useAuth();
+    const [addingType, setAddingType] = useState(null); // 'worker', 'supervisor', 'machine'
+    const [selectedResourceId, setSelectedResourceId] = useState(null); // For history drill-down
+    const isAdmin = user?.role === 'admin';
+    const isSupervisor = user?.role === 'supervisor';
+
+    // Helper: Group history by resource ID
+    const groupHistory = (history = [], type = 'user') => {
+        const groups = {};
+        history.forEach(item => {
+            const resourceId = type === 'user' ? item.user_id : item.machine_id;
+            if (!groups[resourceId]) {
+                groups[resourceId] = { ...item, periods: [] };
+            }
+            groups[resourceId].periods.push({
+                assigned_at: item.assigned_at,
+                unassigned_at: item.unassigned_at
+            });
+        });
+        return Object.values(groups);
+    };
+
+    const groupedSupervisors = groupHistory(project.userHistory?.filter(u => u.role === 'supervisor'), 'user');
+    const groupedWorkers = groupHistory(project.userHistory?.filter(u => u.role === 'worker'), 'user');
+    const groupedMachines = groupHistory(project.machineHistory, 'machine');
+
+    // Helper: Timeline events
+    const timelineEvents = [
+        ...(project.userHistory || []).map(u => ([
+            { type: 'joined', time: u.assigned_at, resource: u.name, role: u.role, isUser: true },
+            ...(u.unassigned_at ? [{ type: 'left', time: u.unassigned_at, resource: u.name, role: u.role, isUser: true }] : [])
+        ])).flat(),
+        ...(project.machineHistory || []).map(m => ([
+            { type: 'joined', time: m.assigned_at, resource: m.name, role: 'machine', isUser: false },
+            ...(m.unassigned_at ? [{ type: 'left', time: m.unassigned_at, resource: m.name, role: 'machine', isUser: false }] : [])
+        ])).flat()
+    ].sort((a, b) => new Date(b.time) - new Date(a.time));
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/40 dark:bg-black/60 backdrop-blur-sm animate-fade-in">
             <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 w-full max-w-3xl rounded-2xl shadow-xl animate-slide-in flex flex-col max-h-[90vh] overflow-hidden">
@@ -145,125 +183,577 @@ function ProjectDetailsView({ project, onClose, getImageUrl }) {
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                         <div className="card-stat p-4">
                             <Users size={16} className="text-blue-500 mb-2" />
-                            <p className="stat-value">{project.supervisors?.length || 0}</p>
-                            <p className="stat-label">Supervisors</p>
+                            <p className="stat-value">{project.stats?.teamSize || project.supervisors?.length + project.workers?.length || 0}</p>
+                            <p className="stat-label">Total Personnel</p>
                         </div>
                         <div className="card-stat p-4">
-                            <Users size={16} className="text-emerald-500 mb-2" />
-                            <p className="stat-value">{project.workers?.length || 0}</p>
-                            <p className="stat-label">Workers</p>
+                            <Briefcase size={16} className="text-emerald-500 mb-2" />
+                            <p className="stat-value">{project.stats?.taskCounts?.completed || project.tasks?.filter(t => t.status === 'completed').length || 0}</p>
+                            <p className="stat-label">Tasks Done</p>
                         </div>
                         <div className="card-stat p-4">
                             <Cpu size={16} className="text-zinc-500 mb-2" />
-                            <p className="stat-value">{project.machines?.length || 0}</p>
-                            <p className="stat-label">Machines</p>
+                            <p className="stat-value">{project.stats?.machineUsage || project.machines?.length || 0}</p>
+                            <p className="stat-label">Machines Used</p>
                         </div>
                         <div className="card-stat p-4">
-                            <Briefcase size={16} className="text-purple-500 mb-2" />
-                            <p className="stat-value">{project.tasks?.length || 0}</p>
-                            <p className="stat-label">Tasks</p>
+                            <Activity size={16} className="text-purple-500 mb-2" />
+                            <p className="stat-value">{project.stats?.efficiency || 0}%</p>
+                            <p className="stat-label">Efficiency</p>
                         </div>
                     </div>
 
+                    {project.status === 'completed' && project.stats && (
+                        <div className="p-5 rounded-2xl bg-blue-50 dark:bg-blue-500/5 border border-blue-100 dark:border-blue-500/20">
+                            <div className="flex items-center justify-between mb-4">
+                                <h4 className="text-sm font-bold text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                                    <Activity size={18} /> Performance Analysis
+                                </h4>
+                                <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest bg-blue-100 dark:bg-blue-500/20 px-2 py-0.5 rounded">Efficiency Score: {project.stats.efficiency}%</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4">
+                                <div className="space-y-1">
+                                    <p className="text-[10px] font-bold text-blue-400 uppercase tracking-tighter">Total Tasks</p>
+                                    <p className="text-lg font-black text-blue-900 dark:text-blue-50">{project.stats.taskCounts.total}</p>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-tighter">On Time</p>
+                                    <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">{project.stats.taskCounts.completed - project.stats.taskCounts.delayed}</p>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-[10px] font-bold text-red-300 uppercase tracking-tighter">Delayed</p>
+                                    <p className="text-lg font-black text-red-500">{project.stats.taskCounts.delayed}</p>
+                                </div>
+                            </div>
+                            <div className="mt-4 h-2 w-full bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden flex">
+                                <div className="h-full bg-emerald-500" style={{ width: `${Math.round(((project.stats.taskCounts.completed - project.stats.taskCounts.delayed) / project.stats.taskCounts.total) * 100)}%` }} />
+                                <div className="h-full bg-red-500" style={{ width: `${Math.round((project.stats.taskCounts.delayed / project.stats.taskCounts.total) * 100)}%` }} />
+                                <div className="h-full bg-zinc-300 dark:bg-zinc-700" style={{ width: `${Math.round(((project.stats.taskCounts.total - project.stats.taskCounts.completed) / project.stats.taskCounts.total) * 100)}%` }} />
+                            </div>
+                        </div>
+                    )}
+
                     <div className="grid md:grid-cols-2 gap-8">
                         <div className="space-y-4">
-                            <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest border-b pb-2">Management Team</h4>
+                            <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest border-b pb-2">Management History</h4>
                             <div className="space-y-3">
-                                {project.supervisors?.length > 0 ? (
+                                {project.status === 'active' && project.supervisors?.length > 0 ? (
                                     project.supervisors.map(s => (
-                                        <div key={s.id} className="flex items-center gap-3 p-2 rounded-xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800">
-                                            <TeamAvatar user={s} getImageUrl={getImageUrl} />
-                                            <div>
-                                                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{s.name}</p>
-                                                <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-tight">{s.email}</p>
+                                        <div key={s.id} className="flex items-center justify-between p-2 rounded-xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800">
+                                            <div className="flex items-center gap-3">
+                                                <TeamAvatar user={s} getImageUrl={getImageUrl} />
+                                                <div>
+                                                    <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{s.name}</p>
+                                                    <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-tight">{s.email}</p>
+                                                </div>
                                             </div>
+                                            {(isAdmin || isSupervisor) && (
+                                                <button
+                                                    onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        if (!confirm(`Remove ${s.name} from project?`)) return;
+                                                        try {
+                                                            await api.post(`/projects/${project.id}/unassign-user`, { userId: s.id });
+                                                            toast.success(`${s.name} removed`);
+                                                            onSave();
+                                                        } catch { toast.error('Failed to remove'); }
+                                                    }}
+                                                    className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all"
+                                                    title="Remove Supervisor"
+                                                >
+                                                    <X size={14} />
+                                                </button>
+                                            )}
                                         </div>
                                     ))
-                                ) : <p className="text-sm text-zinc-500 italic">No supervisors assigned</p>}
+                                ) : project.status === 'completed' ? (
+                                    groupedSupervisors.map(s => (
+                                        <div key={s.id} className="space-y-2">
+                                            <button
+                                                onClick={() => setSelectedResourceId(selectedResourceId === s.id ? null : s.id)}
+                                                className="w-full flex items-center justify-between p-2 rounded-xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all text-left"
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <TeamAvatar user={s} getImageUrl={getImageUrl} />
+                                                    <div>
+                                                        <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{s.name}</p>
+                                                        <p className="text-[9px] text-zinc-500 uppercase tracking-widest">{s.periods.length} Assignment Period{s.periods.length > 1 ? 's' : ''}</p>
+                                                    </div>
+                                                </div>
+                                                <ChevronRight size={14} className={`text-zinc-400 transition-transform ${selectedResourceId === s.id ? 'rotate-90' : ''}`} />
+                                            </button>
+
+                                            {selectedResourceId === s.id && (
+                                                <div className="ml-10 space-y-2 animate-in slide-in-from-left-2 fade-in duration-200">
+                                                    {s.periods.map((p, idx) => (
+                                                        <div key={idx} className="p-2 rounded-lg bg-white dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-700 text-[10px]">
+                                                            <div className="flex justify-between text-zinc-400 uppercase font-bold mb-1">
+                                                                <span>Period {idx + 1}</span>
+                                                                <span>{p.unassigned_at ? 'Completed' : 'Active'}</span>
+                                                            </div>
+                                                            <div className="flex flex-col gap-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                                                    <span className="text-zinc-600 dark:text-zinc-400">Joined:</span>
+                                                                    <span className="text-zinc-900 dark:text-zinc-100 font-bold">{new Date(p.assigned_at).toLocaleString()}</span>
+                                                                </div>
+                                                                {p.unassigned_at && (
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                                                        <span className="text-zinc-600 dark:text-zinc-400">Left:</span>
+                                                                        <span className="text-zinc-900 dark:text-zinc-100 font-bold">{new Date(p.unassigned_at).toLocaleString()}</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                ) : (
+                                    <p className="text-sm text-zinc-500 italic text-center py-4 border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-xl">No supervisors assigned</p>
+                                )}
+
+                                {project.status === 'active' && (isAdmin || isSupervisor) && (
+                                    <div className="pt-2">
+                                        {addingType === 'supervisor' ? (
+                                            <div className="space-y-2 p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 animate-in fade-in slide-in-from-top-2">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-[10px] font-bold text-zinc-400 uppercase">Available Supervisors</span>
+                                                    <button onClick={() => setAddingType(null)} className="text-zinc-400 hover:text-zinc-600"><X size={12} /></button>
+                                                </div>
+                                                <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                                                    {allSupervisors.filter(s => s.project_id === null).map(s => (
+                                                        <button
+                                                            key={s.id}
+                                                            onClick={async () => {
+                                                                try {
+                                                                    await api.post(`/projects/${project.id}/assign-user`, { userId: s.id });
+                                                                    toast.success(`${s.name} added`);
+                                                                    setAddingType(null);
+                                                                    onSave();
+                                                                } catch { toast.error('Failed to add'); }
+                                                            }}
+                                                            className="w-full text-left p-2 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-bold transition-colors flex items-center justify-between border border-transparent hover:border-zinc-100 dark:hover:border-zinc-700"
+                                                        >
+                                                            <div className="flex items-center gap-2">
+                                                                <TeamAvatar user={s} getImageUrl={getImageUrl} />
+                                                                <span>{s.name}</span>
+                                                            </div>
+                                                            <Plus size={12} className="text-zinc-400" />
+                                                        </button>
+                                                    ))}
+                                                    {allSupervisors.filter(s => s.project_id === null).length === 0 && <p className="text-[10px] text-zinc-400 italic text-center py-2">No available supervisors</p>}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <button onClick={() => setAddingType('supervisor')} className="w-full py-2 border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-xl text-zinc-400 hover:text-blue-500 hover:border-blue-200 dark:hover:border-blue-900/30 transition-all text-xs font-bold flex items-center justify-center gap-2">
+                                                <Plus size={14} /> Add Supervisor
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
                         <div className="space-y-4">
-                            <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest border-b pb-2">Floor Workers</h4>
+                            <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest border-b pb-2">Floor Workforce</h4>
                             <div className="space-y-3">
-                                {project.workers?.length > 0 ? (
+                                {project.status === 'active' && project.workers?.length > 0 ? (
                                     project.workers.map(w => (
-                                        <div key={w.id} className="flex items-center gap-3 p-2 rounded-xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800">
-                                            <TeamAvatar user={w} getImageUrl={getImageUrl} />
-                                            <div>
-                                                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{w.name}</p>
-                                                <div className="flex items-center gap-2 mt-0.5">
-                                                    <span className={`w-1.5 h-1.5 rounded-full ${w.status === 'busy' ? 'bg-blue-500' : 'bg-emerald-500'}`} />
-                                                    <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-tight">{w.status}</p>
+                                        <div key={w.id} className="flex items-center justify-between p-2 rounded-xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800">
+                                            <div className="flex items-center gap-3">
+                                                <TeamAvatar user={w} getImageUrl={getImageUrl} />
+                                                <div>
+                                                    <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{w.name}</p>
+                                                    <div className="flex items-center gap-2 mt-0.5">
+                                                        <span className={`w-1.5 h-1.5 rounded-full ${w.status === 'busy' ? 'bg-blue-500' : 'bg-emerald-500'}`} />
+                                                        <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-tight">{w.status}</p>
+                                                    </div>
                                                 </div>
                                             </div>
+                                            {(isAdmin || isSupervisor) && (
+                                                <button
+                                                    onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        if (!confirm(`Remove ${w.name} from project?`)) return;
+                                                        try {
+                                                            await api.post(`/projects/${project.id}/unassign-user`, { userId: w.id });
+                                                            toast.success(`${w.name} removed`);
+                                                            onSave(); // Refresh
+                                                        } catch { toast.error('Failed to remove'); }
+                                                    }}
+                                                    className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all"
+                                                    title="Remove Worker"
+                                                >
+                                                    <X size={14} />
+                                                </button>
+                                            )}
                                         </div>
                                     ))
-                                ) : <p className="text-sm text-zinc-500 italic">No workers assigned</p>}
+                                ) : project.status === 'completed' ? (
+                                    groupedWorkers.map(w => (
+                                        <div key={w.id} className="space-y-2">
+                                            <button
+                                                onClick={() => setSelectedResourceId(selectedResourceId === w.id ? null : w.id)}
+                                                className="w-full flex items-center justify-between p-2 rounded-xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all text-left"
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <TeamAvatar user={w} getImageUrl={getImageUrl} />
+                                                    <div>
+                                                        <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{w.name}</p>
+                                                        <p className="text-[9px] text-zinc-500 uppercase tracking-widest">{w.periods.length} Assignment Period{w.periods.length > 1 ? 's' : ''}</p>
+                                                    </div>
+                                                </div>
+                                                <ChevronRight size={14} className={`text-zinc-400 transition-transform ${selectedResourceId === w.id ? 'rotate-90' : ''}`} />
+                                            </button>
+
+                                            {selectedResourceId === w.id && (
+                                                <div className="ml-10 space-y-2 animate-in slide-in-from-left-2 fade-in duration-200">
+                                                    {w.periods.map((p, idx) => (
+                                                        <div key={idx} className="p-2 rounded-lg bg-white dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-700 text-[10px]">
+                                                            <div className="flex justify-between text-zinc-400 uppercase font-bold mb-1">
+                                                                <span>Period {idx + 1}</span>
+                                                                <span>{p.unassigned_at ? 'Completed' : 'Active'}</span>
+                                                            </div>
+                                                            <div className="flex flex-col gap-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                                                    <span className="text-zinc-600 dark:text-zinc-400">Joined:</span>
+                                                                    <span className="text-zinc-900 dark:text-zinc-100 font-bold">{new Date(p.assigned_at).toLocaleString()}</span>
+                                                                </div>
+                                                                {p.unassigned_at && (
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                                                        <span className="text-zinc-600 dark:text-zinc-400">Left:</span>
+                                                                        <span className="text-zinc-900 dark:text-zinc-100 font-bold">{new Date(p.unassigned_at).toLocaleString()}</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                ) : (
+                                    <p className="text-sm text-zinc-500 italic text-center py-4 border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-xl">No workers assigned</p>
+                                )}
+
+                                {project.status === 'active' && (isAdmin || isSupervisor) && (
+                                    <div className="pt-2">
+                                        {addingType === 'worker' ? (
+                                            <div className="space-y-2 p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 animate-in fade-in slide-in-from-top-2">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-[10px] font-bold text-zinc-400 uppercase">Available Workers</span>
+                                                    <button onClick={() => setAddingType(null)} className="text-zinc-400 hover:text-zinc-600"><X size={12} /></button>
+                                                </div>
+                                                <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                                                    {allWorkers.filter(w => w.project_id === null).map(w => (
+                                                        <button
+                                                            key={w.id}
+                                                            onClick={async () => {
+                                                                try {
+                                                                    await api.post(`/projects/${project.id}/assign-user`, { userId: w.id });
+                                                                    toast.success(`${w.name} added`);
+                                                                    setAddingType(null);
+                                                                    onSave();
+                                                                } catch { toast.error('Failed to add'); }
+                                                            }}
+                                                            className="w-full text-left p-2 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-bold transition-colors flex items-center justify-between border border-transparent hover:border-zinc-100 dark:hover:border-zinc-700"
+                                                        >
+                                                            <div className="flex items-center gap-2">
+                                                                <TeamAvatar user={w} getImageUrl={getImageUrl} />
+                                                                <span>{w.name}</span>
+                                                            </div>
+                                                            <Plus size={12} className="text-zinc-400" />
+                                                        </button>
+                                                    ))}
+                                                    {allWorkers.filter(w => w.project_id === null).length === 0 && <p className="text-[10px] text-zinc-400 italic text-center py-2">No available workers</p>}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <button onClick={() => setAddingType('worker')} className="w-full py-2 border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-xl text-zinc-400 hover:text-blue-500 hover:border-blue-200 dark:hover:border-blue-900/30 transition-all text-xs font-bold flex items-center justify-center gap-2">
+                                                <Plus size={14} /> Add Worker
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
 
                     <div className="space-y-4">
-                        <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest border-b pb-2">Assigned Machinery</h4>
-                        <div className="flex flex-wrap gap-2">
-                            {project.machines?.map(m => (
-                                <span key={m.id} className="px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg text-xs font-bold border border-zinc-200 dark:border-zinc-700">
-                                    {m.name} ({m.type})
-                                </span>
+                        <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest border-b pb-2">Hardware & Machinery</h4>
+                        <div className="flex flex-wrap gap-3">
+                            {project.status === 'active' && project.machines?.map(m => (
+                                <div key={m.id} className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg text-xs font-bold border border-zinc-200 dark:border-zinc-700 shadow-sm transition-all hover:border-zinc-300 dark:hover:border-zinc-600">
+                                    <Cpu size={12} className="text-zinc-400" />
+                                    <span>{m.name} ({m.type})</span>
+                                    {(isAdmin || isSupervisor) && (
+                                        <button
+                                            onClick={async () => {
+                                                if (!confirm(`Remove ${m.name} from project?`)) return;
+                                                try {
+                                                    await api.post(`/projects/${project.id}/unassign-machine`, { machineId: m.id });
+                                                    toast.success(`${m.name} removed`);
+                                                    onSave(); // Refresh
+                                                } catch { toast.error('Failed to remove'); }
+                                            }}
+                                            className="ml-1 p-0.5 text-zinc-400 hover:text-red-500 rounded transition-colors"
+                                        >
+                                            <X size={12} />
+                                        </button>
+                                    )}
+                                </div>
                             ))}
-                            {(!project.machines || project.machines.length === 0) && <p className="text-sm text-zinc-500 italic">No machines assigned</p>}
+                            {project.status === 'active' && (isAdmin || isSupervisor) && (
+                                <div className="relative">
+                                    {addingType === 'machine' ? (
+                                        <div className="absolute top-[calc(100%+8px)] left-0 z-10 w-64 space-y-2 p-3 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl animate-in fade-in slide-in-from-top-2">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-[10px] font-bold text-zinc-400 uppercase">Available Machinery</span>
+                                                <button onClick={() => setAddingType(null)} className="text-zinc-400 hover:text-zinc-600"><X size={12} /></button>
+                                            </div>
+                                            <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                                                {allMachines.filter(m => m.project_id === null).length > 0 ? (
+                                                    allMachines.filter(m => m.project_id === null).map(m => (
+                                                        <button
+                                                            key={m.id}
+                                                            onClick={async () => {
+                                                                try {
+                                                                    await api.post(`/projects/${project.id}/assign-machine`, { machineId: m.id });
+                                                                    toast.success(`${m.name} added`);
+                                                                    setAddingType(null);
+                                                                    onSave();
+                                                                } catch { toast.error('Failed to add'); }
+                                                            }}
+                                                            className="w-full text-left p-2 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-bold transition-colors flex items-center justify-between border border-transparent hover:border-zinc-100 dark:hover:border-zinc-700"
+                                                        >
+                                                            <span>{m.name} ({m.type})</span>
+                                                            <Cpu size={12} className="text-zinc-400" />
+                                                        </button>
+                                                    ))
+                                                ) : <p className="text-[10px] text-zinc-400 italic text-center py-2">No available machines</p>}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <button onClick={() => setAddingType('machine')} className="flex items-center gap-2 px-3 py-1.5 border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-lg text-zinc-400 hover:text-blue-500 hover:border-blue-200 dark:hover:border-blue-900/40 transition-all text-[10px] font-black uppercase tracking-tighter">
+                                            <Plus size={12} /> Add Machine
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                            {project.status === 'completed' && groupedMachines.map(m => (
+                                <div key={m.id} className="w-full space-y-2">
+                                    <button
+                                        onClick={() => setSelectedResourceId(selectedResourceId === `machine-${m.id}` ? null : `machine-${m.id}`)}
+                                        className="w-full flex items-center justify-between px-3 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg text-xs font-bold border border-zinc-200 dark:border-zinc-700 hover:border-zinc-400 transition-all"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <Cpu size={12} className="text-zinc-400" />
+                                            <span>{m.name} ({m.type})</span>
+                                            <span className="mx-2 text-[10px] text-zinc-400 px-1.5 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-900">{m.periods.length} Periods</span>
+                                        </div>
+                                        <ChevronRight size={12} className={`text-zinc-400 transition-transform ${selectedResourceId === `machine-${m.id}` ? 'rotate-90' : ''}`} />
+                                    </button>
+
+                                    {selectedResourceId === `machine-${m.id}` && (
+                                        <div className="ml-6 space-y-2 animate-in slide-in-from-left-1 fade-in duration-200">
+                                            {m.periods.map((p, idx) => (
+                                                <div key={idx} className="p-2 rounded-lg bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800 text-[10px]">
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <span className="text-zinc-500 uppercase font-bold tracking-tight">Assignment {idx + 1}</span>
+                                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${p.unassigned_at ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-500' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600'}`}>
+                                                            {p.unassigned_at ? 'Completed' : 'Active'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div>
+                                                            <p className="text-[8px] text-zinc-400 uppercase font-bold">Start</p>
+                                                            <p className="font-bold text-zinc-700 dark:text-zinc-300">{new Date(p.assigned_at).toLocaleString()}</p>
+                                                        </div>
+                                                        {p.unassigned_at && (
+                                                            <div>
+                                                                <p className="text-[8px] text-zinc-400 uppercase font-bold">End</p>
+                                                                <p className="font-bold text-zinc-700 dark:text-zinc-300">{new Date(p.unassigned_at).toLocaleString()}</p>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                            {(!project.machines || project.machines.length === 0) && (!project.machineHistory || project.machineHistory.length === 0) && <p className="text-sm text-zinc-500 italic text-center w-full py-4 border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-xl">No hardware history found</p>}
+                        </div>
+                    </div>
+
+                    {project.status === 'active' && (
+                        <div className="pt-6 border-t border-zinc-100 dark:border-zinc-800">
+                            <button
+                                onClick={async () => {
+                                    if (!confirm('Mark this project as complete? All resources will be released.')) return;
+                                    try {
+                                        await api.post(`/projects/${project.id}/complete`);
+                                        toast.success('Project completed');
+                                        onSave();
+                                        onClose();
+                                    } catch {
+                                        toast.error('Failed to complete project');
+                                    }
+                                }}
+                                className="w-full py-4 rounded-2xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-all shadow-xl shadow-zinc-200 dark:shadow-none flex items-center justify-center gap-3 active:scale-[0.98]"
+                            >
+                                <CheckCircle size={20} />
+                                Mark as Complete
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Timeline View */}
+                    <div className="mt-8 pt-8 border-t border-zinc-100 dark:border-zinc-800">
+                        <div className="flex items-center justify-between mb-6">
+                            <h4 className="text-sm font-black text-zinc-900 dark:text-zinc-100 uppercase tracking-tighter flex items-center gap-2">
+                                <Activity size={16} className="text-blue-500" />
+                                Project Timeline
+                            </h4>
+                            <span className="text-[10px] font-bold text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
+                                {timelineEvents.length} Events
+                            </span>
+                        </div>
+
+                        <div className="relative space-y-6 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-0.5 before:bg-zinc-100 dark:before:bg-zinc-800">
+                            {timelineEvents.map((event, idx) => (
+                                <div key={idx} className="relative pl-8 animate-in slide-in-from-top-2 fade-in duration-300" style={{ animationDelay: `${idx * 50}ms` }}>
+                                    <div className={`absolute left-0 top-1 w-6 h-6 rounded-full border-4 border-white dark:border-zinc-900 flex items-center justify-center shadow-sm z-10 ${event.type === 'joined' ? 'bg-emerald-500' : 'bg-red-500'
+                                        }`}>
+                                        {event.type === 'joined' ? <Plus size={10} className="text-white" /> : <X size={10} className="text-white" />}
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                                                {event.resource}
+                                                <span className="ml-2 text-[10px] font-normal text-zinc-500">({event.role})</span>
+                                            </span>
+                                            <span className="text-[10px] font-medium text-zinc-400">
+                                                {new Date(event.time).toLocaleString()}
+                                            </span>
+                                        </div>
+                                        <p className="text-[10px] text-zinc-500 mt-1 uppercase tracking-tight font-black">
+                                            {event.type === 'joined' ? 'Assigned to Project' : 'Unassigned from Project'}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                            {timelineEvents.length === 0 && (
+                                <div className="text-center py-8">
+                                    <Activity size={32} className="mx-auto text-zinc-200 dark:text-zinc-800 mb-2" />
+                                    <p className="text-xs text-zinc-400 italic">No timeline events recorded yet</p>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
+
             </div>
         </div>
     );
 }
 
-function HistoryFootprint({ history }) {
+function HistoryFootprint({ history, getImageUrl, onViewProject }) {
     const { t } = useLanguage();
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-2xl font-black text-zinc-900 dark:text-zinc-50 tracking-tight flex items-center gap-2">
-                        <History size={24} className="text-blue-500" />
-                        Assignment Footprint
+                        <History size={24} className="text-emerald-500" />
+                        Completed Projects
                     </h2>
-                    <p className="text-zinc-500 text-sm">Historical log of projects assigned to you.</p>
+                    <p className="text-zinc-500 text-sm">Full history of completed shopfloor project footprints.</p>
                 </div>
             </div>
 
-            <div className="grid gap-4">
-                {history.map(item => (
-                    <div key={item.id} className="group relative pl-8 border-l-2 border-zinc-100 dark:border-zinc-800 pb-8 last:pb-0">
+            <div className="grid gap-6">
+                {history.map((item, idx) => (
+                    <div key={item.project_id || item.id || idx} className="group relative pl-8 border-l-2 border-zinc-100 dark:border-zinc-800 pb-8 last:pb-0">
                         <div className={`absolute left-[-9px] top-0 w-4 h-4 rounded-full border-4 border-white dark:border-zinc-950 ${item.unassigned_at ? 'bg-zinc-300 dark:bg-zinc-700' : 'bg-emerald-500'}`} />
 
-                        <div className="card p-5 group-hover:border-zinc-300 dark:group-hover:border-zinc-700 transition-all">
-                            <div className="flex justify-between items-start mb-2">
-                                <h3 className="font-bold text-lg text-zinc-900 dark:text-zinc-50">{item.project_name}</h3>
-                                {!item.unassigned_at && <span className="badge badge-success">Currently Active</span>}
+                        <div
+                            className="card p-6 group-hover:border-emerald-200 dark:group-hover:border-emerald-900/30 transition-all shadow-sm hover:shadow-md cursor-pointer active:scale-[0.99]"
+                            onClick={() => onViewProject(item.project_id)}
+                        >
+                            <div className="flex justify-between items-start mb-4">
+                                <h3 className="font-bold text-xl text-zinc-900 dark:text-zinc-50">{item.project_name}</h3>
+                                {item.unassigned_at ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-400 uppercase tracking-widest bg-zinc-50 dark:bg-zinc-900 px-2 py-1 rounded-md border border-zinc-100 dark:border-zinc-800">
+                                        Completed
+                                    </span>
+                                ) : (
+                                    <span className="badge badge-success">Currently Assigned</span>
+                                )}
                             </div>
-                            <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4 line-clamp-2">{item.project_description || 'No description available for this project.'}</p>
+                            <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6 line-clamp-2">{item.project_description || 'No description available.'}</p>
 
-                            <div className="grid grid-cols-3 gap-4 pt-4 border-t border-zinc-50 dark:border-zinc-900">
-                                <div>
-                                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Assigned</p>
-                                    <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mt-1">{new Date(item.assigned_at).toLocaleDateString()}</p>
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 pt-4 border-t border-zinc-50 dark:border-zinc-900">
+                                    <div>
+                                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Assigned On</p>
+                                        <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mt-1">{new Date(item.assigned_at).toLocaleDateString()}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Duration</p>
+                                        <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mt-1">
+                                            {item.unassigned_at ? `${Math.ceil((new Date(item.unassigned_at) - new Date(item.assigned_at)) / (1000 * 60 * 60 * 24))} days` : 'Ongoing'}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Tasks Completed</p>
+                                        <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1">
+                                            <CheckCircle size={12} /> {item.completedTasks}
+                                        </p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Duration</p>
-                                    <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mt-1">
-                                        {item.unassigned_at ? `${Math.ceil((new Date(item.unassigned_at) - new Date(item.assigned_at)) / (1000 * 60 * 60 * 24))} days` : 'Ongoing'}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Tasks Done</p>
-                                    <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1">
-                                        <CheckCircle size={12} /> {item.completedTasks}
-                                    </p>
-                                </div>
+
+                                {/* Project-wide history details for Admins/Supervisors */}
+                                {item.details && (
+                                    <div className="space-y-4 pt-4 border-t border-zinc-50 dark:border-zinc-900">
+                                        <div className="grid md:grid-cols-2 gap-4">
+                                            <div>
+                                                <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                                    <Users size={12} /> Team Footprint
+                                                </h4>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {item.details.userHistory?.map(uh => (
+                                                        <div key={uh.id} className="flex items-center gap-2 p-1.5 pr-3 rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800" title={`Assigned: ${new Date(uh.assigned_at).toLocaleDateString()}`}>
+                                                            <TeamAvatar user={uh} getImageUrl={getImageUrl} />
+                                                            <div className="min-w-0">
+                                                                <p className="text-[10px] font-bold text-zinc-700 dark:text-zinc-300 truncate">{uh.name}</p>
+                                                                <p className="text-[8px] text-zinc-500 uppercase tracking-tighter">{new Date(uh.assigned_at).toLocaleDateString()}</p>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                                    <Cpu size={12} /> Hardware Logs
+                                                </h4>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {item.details.machineHistory?.map(mh => (
+                                                        <div key={mh.id} className="flex flex-col p-1.5 px-3 rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800" title={`Assigned: ${new Date(mh.assigned_at).toLocaleDateString()}`}>
+                                                            <p className="text-[10px] font-bold text-zinc-700 dark:text-zinc-300">{mh.name}</p>
+                                                            <p className="text-[8px] text-zinc-500 uppercase tracking-tighter">{new Date(mh.assigned_at).toLocaleDateString()}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -271,13 +761,14 @@ function HistoryFootprint({ history }) {
                 {history.length === 0 && (
                     <div className="text-center py-20 bg-zinc-50 dark:bg-zinc-950/40 rounded-3xl border-2 border-dashed border-zinc-200 dark:border-zinc-800">
                         <Briefcase size={40} className="mx-auto text-zinc-300 mb-4" />
-                        <p className="text-zinc-500 font-medium">No historical project footprints found.</p>
+                        <p className="text-zinc-500 font-medium">No completed project footprints found.</p>
                     </div>
                 )}
             </div>
         </div>
     );
 }
+
 
 export default function ProjectsPage() {
     const { user, getImageUrl } = useAuth();
@@ -301,11 +792,25 @@ export default function ProjectsPage() {
                 api.get('/machines'),
                 api.get('/projects/my-history')
             ]);
+
+            // For history, if admin/supervisor, we should get detailed mapping
+            let historyData = hRes.data;
+            if (user?.role === 'admin' || user?.role === 'supervisor') {
+                const detailedHistory = await Promise.all(historyData.map(async h => {
+                    try {
+                        const dRes = await api.get(`/projects/${h.project_id}`);
+                        return { ...h, details: dRes.data };
+                    } catch { return h; }
+                }));
+                historyData = detailedHistory;
+            }
+
             setProjects(pRes.data);
             setWorkers(wRes.data);
             setSupervisors(sRes.data);
             setMachines(mRes.data);
-            setHistory(hRes.data);
+            setHistory(historyData);
+
         } catch { }
         setLoading(false);
     }, []);
@@ -341,12 +846,13 @@ export default function ProjectsPage() {
                     </h1>
                     <p className="text-zinc-500 dark:text-zinc-400 mt-1 font-medium">Manage and track shopfloor project footprints.</p>
                 </div>
-                {isAdmin && (
+                {isAdmin && activeTab === 'current' && (
                     <button onClick={() => setShowForm(true)} className="btn-primary px-6 py-3 shadow-lg shadow-blue-500/20">
                         <Plus size={18} /> New Project
                     </button>
                 )}
             </div>
+
 
             {(isAdmin || isSupervisor) && (
                 <div className="flex gap-2 p-1 bg-zinc-100 dark:bg-zinc-900 rounded-2xl w-fit border border-zinc-200 dark:border-zinc-800">
@@ -360,8 +866,9 @@ export default function ProjectsPage() {
                         onClick={() => setActiveTab('history')}
                         className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'history' ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 shadow-sm' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
                     >
-                        <History size={16} /> My Footprints
+                        <History size={16} /> Completed Projects
                     </button>
+
                 </div>
             )}
 
@@ -371,7 +878,8 @@ export default function ProjectsPage() {
                 <>
                     {activeTab === 'current' ? (
                         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {projects.map(p => (
+                            {projects.filter(p => !p.status || p.status === 'active').map(p => (
+
                                 <div key={p.id} className="card group hover:shadow-xl transition-all cursor-pointer overflow-hidden border-zinc-100 dark:border-zinc-800" onClick={() => handleViewProject(p.id)}>
                                     <div className="p-6">
                                         <div className="flex justify-between items-start mb-4">
@@ -420,7 +928,11 @@ export default function ProjectsPage() {
                             )}
                         </div>
                     ) : (
-                        <HistoryFootprint history={history} />
+                        <HistoryFootprint
+                            history={history}
+                            getImageUrl={getImageUrl}
+                            onViewProject={handleViewProject}
+                        />
                     )}
                 </>
             )}
@@ -440,7 +952,11 @@ export default function ProjectsPage() {
                 <ProjectDetailsView
                     project={viewProject}
                     onClose={() => setViewProject(null)}
+                    onSave={fetchAll}
                     getImageUrl={getImageUrl}
+                    allWorkers={workers}
+                    allSupervisors={supervisors}
+                    allMachines={machines}
                 />
             )}
         </div>

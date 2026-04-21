@@ -94,7 +94,14 @@ router.get('/summary', auth, (req, res) => {
     ORDER BY day ASC
   `).all(...(isScoped ? [projectId] : []));
 
+  let projectName = null;
+  if (isScoped) {
+    const project = db.prepare('SELECT name FROM projects WHERE id = ?').get(projectId);
+    projectName = project ? project.name : 'Unknown Project';
+  }
+
   res.json({
+    projectName,
     taskCounts,
     machineCounts,
     workerCount: workerCount.count,

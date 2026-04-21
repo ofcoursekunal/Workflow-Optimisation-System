@@ -109,15 +109,45 @@ export default function AdminDashboard() {
 
   const renderOverview = () => {
     if (!summary) return null;
-    const taskMap = Object.fromEntries((summary.taskCounts || []).map(r => [r.status, r.count]));
-    const machineMap = Object.fromEntries((summary.machineCounts || []).map(r => [r.status, r.count]));
-    const totalTasks = Object.values(taskMap).reduce((a, b) => a + b, 0);
-    const completionRate = totalTasks > 0 ? Math.round(((taskMap.completed || 0) / totalTasks) * 100) : 0;
-    const totalDelay = (summary.workerPerformance || []).reduce((acc, w) => acc + (w.total_delay_mins || 0), 0);
-    const pieData = (summary.taskCounts || []).map(r => ({ name: r.status.replace('_', ' '), value: r.count }));
+
+    const totalTasks = summary.taskCounts?.reduce((sum, item) => sum + item.count, 0) || 0;
+    const completedTasks = summary.taskCounts?.find(t => t.status === 'completed')?.count || 0;
+    const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+    const totalDelay = summary.total_delay_mins || 0;
+
+    const machineMap = (summary.machineCounts || []).reduce((acc, current) => {
+      acc[current.status] = current.count;
+      return acc;
+    }, {});
+
+    const pieData = (summary.taskCounts || []).map(t => ({
+      name: t.status.replace('_', ' '),
+      value: t.count
+    }));
 
     return (
       <div className="space-y-6 animate-slide-in">
+        {user?.role === 'supervisor' && summary.projectName && (
+          <div className="px-6 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-700 text-white shadow-xl shadow-blue-500/20 mb-8 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+              <ClipboardList size={80} />
+            </div>
+            <p className="text-blue-100 text-xs font-black uppercase tracking-[0.2em] mb-1">Active Assignment</p>
+            <h2 className="text-4xl font-black tracking-tight flex items-center gap-3">
+              <div className="w-1.5 h-8 bg-white/30 rounded-full" />
+              {summary.projectName}
+            </h2>
+            <div className="mt-4 flex items-center gap-4 text-sm font-bold text-blue-50/80">
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/10 backdrop-blur-md border border-white/10 uppercase tracking-tighter">
+                <Users size={14} /> Team Lead
+              </div>
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/10 backdrop-blur-md border border-white/10 uppercase tracking-tighter">
+                <Clock size={14} /> Active Project
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { label: 'Total Tasks', value: totalTasks, icon: ClipboardList, color: 'text-blue-500', path: `/${user?.role}/tasks` },
