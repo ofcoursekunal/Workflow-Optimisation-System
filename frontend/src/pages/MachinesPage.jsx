@@ -4,7 +4,7 @@ import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import toast from 'react-hot-toast';
-import { Plus, Edit2, Trash2, X, Loader2, Clock, Cpu, RefreshCw } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Loader2, Clock, Cpu, RefreshCw, Briefcase } from 'lucide-react';
 
 function MachineCard({ machine, canEdit, onEdit, onDelete }) {
   const { user } = useAuth();
@@ -65,6 +65,13 @@ function MachineCard({ machine, canEdit, onEdit, onDelete }) {
         </button>
       )}
 
+      {machine.project_id && (
+        <div className="mb-4 flex items-center gap-2 text-xs font-medium text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 px-3 py-2 rounded-lg">
+          <Briefcase size={12} />
+          <span className="truncate">Project: {machine.projectName || 'Assigned'}</span>
+        </div>
+      )}
+
       <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/50 flex items-center justify-between">
         <span className={`badge badge-${machine.status}`}>{machine.status.toUpperCase()}</span>
         {machine.status !== 'running' && idleDuration !== null && (
@@ -81,8 +88,18 @@ function MachineCard({ machine, canEdit, onEdit, onDelete }) {
 }
 
 function MachineModal({ machine, onClose, onSave }) {
-  const [form, setForm] = useState({ name: machine?.name || '', type: machine?.type || '', status: machine?.status || 'idle' });
+  const [form, setForm] = useState({
+    name: machine?.name || '',
+    type: machine?.type || '',
+    status: machine?.status || 'idle',
+    project_id: machine?.project_id || ''
+  });
   const [loading, setLoading] = useState(false);
+  const [projects, setProjects] = useState([]);
+
+  useEffect(() => {
+    api.get('/projects').then(res => setProjects(res.data)).catch(() => { });
+  }, []);
 
   const handleSubmit = async e => {
     e.preventDefault();
@@ -129,6 +146,15 @@ function MachineModal({ machine, onClose, onSave }) {
               </select>
             </div>
           )}
+          <div>
+            <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Assign Project</label>
+            <select className="select" value={form.project_id} onChange={e => setForm(p => ({ ...p, project_id: e.target.value }))}>
+              <option value="">— No Project —</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
           <div className="flex gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800 mt-4">
             <button type="submit" className="btn-primary flex-1 justify-center py-2.5" disabled={loading}>
               {loading ? <Loader2 size={16} className="animate-spin mr-2" /> : null}
@@ -148,14 +174,20 @@ export default function MachinesPage() {
   const [searchParams] = useSearchParams();
   const [machines, setMachines] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [editMachine, setEditMachine] = useState(null);
   const filterStatus = searchParams.get('filter') || '';
 
   const fetchMachines = useCallback(async () => {
     try {
-      const res = await api.get('/machines');
-      setMachines(res.data);
+      const [mRes, pRes] = await Promise.all([api.get('/machines'), api.get('/projects')]);
+      const machinesWithProject = mRes.data.map(m => ({
+        ...m,
+        projectName: pRes.data.find(p => p.id === m.project_id)?.name
+      }));
+      setMachines(machinesWithProject);
+      setProjects(pRes.data);
     } catch { }
     setLoading(false);
   }, []);

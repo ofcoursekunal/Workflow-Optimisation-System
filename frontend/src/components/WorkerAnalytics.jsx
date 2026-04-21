@@ -107,7 +107,7 @@ export default function WorkerAnalytics({ workerId }) {
           <div className="card">
             <h4 className="text-sm font-bold mb-6 flex items-center gap-2 text-zinc-900 dark:text-zinc-100"><TrendingUp size={16} className="text-blue-500" /> Daily Task Completion</h4>
             <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <LineChart data={dailyTrend}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)', fontWeight: 600 }} axisLine={false} tickLine={false} />
@@ -122,7 +122,7 @@ export default function WorkerAnalytics({ workerId }) {
           <div className="card">
             <h4 className="text-sm font-bold mb-6 flex items-center gap-2 text-zinc-900 dark:text-zinc-100"><Calendar size={16} className="text-emerald-500" /> Monthly Performance Trend</h4>
             <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <BarChart data={monthlyTrend}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--muted)', fontWeight: 600 }} axisLine={false} tickLine={false} />

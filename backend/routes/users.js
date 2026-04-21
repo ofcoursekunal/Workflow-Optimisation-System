@@ -7,6 +7,17 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
+function createNotification(userId, message, type = 'info') {
+  try {
+    db.prepare('INSERT INTO notifications (user_id, message, type) VALUES (?, ?, ?)').run(userId, message, type);
+  } catch (e) { }
+}
+
+function emitNotification(req, userId, message, type = 'info') {
+  const io = req.app.get('io');
+  if (io) io.to(`user_${userId}`).emit('notification:new', { message, type });
+}
+
 // Configure multer storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -36,7 +47,7 @@ const upload = multer({
 router.get('/', auth, (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   try {
-    const users = db.prepare('SELECT id, name, email, role, status, is_on_break, profile_picture, created_at FROM users').all();
+    const users = db.prepare('SELECT id, name, email, role, status, is_on_break, profile_picture, project_id, created_at FROM users').all();
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch users: ' + err.message });
@@ -45,7 +56,21 @@ router.get('/', auth, (req, res) => {
 
 // GET workers only
 router.get('/workers', auth, (req, res) => {
-  const workers = db.prepare("SELECT id, name, email, status, is_on_break, profile_picture FROM users WHERE role = 'worker'").all();
+  let query = "SELECT id, name, email, status, is_on_break, profile_picture, project_id FROM users WHERE role = 'worker'";
+  let projectId = req.user.project_id;
+  if (req.user.role === 'supervisor' || req.user.role === 'worker') {
+    const user = db.prepare('SELECT project_id FROM users WHERE id = ?').get(req.user.id);
+    projectId = user ? user.project_id : null;
+  }
+
+  const params = [];
+  if ((req.user.role === 'supervisor' || req.user.role === 'worker') && projectId !== null) {
+    query += " AND project_id = ?";
+    params.push(projectId);
+  } else if (req.user.role === 'supervisor' || req.user.role === 'worker') {
+    query += " AND project_id = -1";
+  }
+  const workers = db.prepare(query).all(...params);
   res.json(workers);
 });
 
@@ -59,7 +84,7 @@ router.post('/', auth, (req, res) => {
 
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
 
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, project_id } = req.body;
     const profile_picture = req.file ? `/uploads/${req.file.filename}` : null;
 
     const missing = [];
@@ -80,8 +105,18 @@ router.post('/', auth, (req, res) => {
 
     const hash = bcrypt.hashSync(password, 10);
     try {
-      const result = db.prepare('INSERT INTO users (name, email, password_hash, role, profile_picture) VALUES (?, ?, ?, ?, ?)').run(name, email, hash, role, profile_picture);
-      res.json({ id: result.lastInsertRowid, name, email, role, profile_picture });
+      const result = db.prepare('INSERT INTO users (name, email, password_hash, role, profile_picture, project_id) VALUES (?, ?, ?, ?, ?, ?)').run(name, email, hash, role, profile_picture, project_id || null);
+      const newUserId = result.lastInsertRowid;
+
+      if (project_id) {
+        const proj = db.prepare('SELECT name FROM projects WHERE id = ?').get(project_id);
+        if (proj) {
+          const msg = `Welcome! You have been assigned to project: ${proj.name}`;
+          createNotification(newUserId, msg, 'success');
+        }
+      }
+
+      res.json({ id: newUserId, name, email, role, profile_picture });
     } catch (err) {
       if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Email already exists.' });
       res.status(500).json({ error: err.message });
@@ -92,7 +127,7 @@ router.post('/', auth, (req, res) => {
 // PUT update user (Admin only)
 router.put('/:id', auth, (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
-  const { name, role } = req.body;
+  const { name, email, password, role, project_id } = req.body;
   const targetId = req.params.id;
 
   try {
@@ -104,13 +139,40 @@ router.put('/:id', auth, (req, res) => {
       return res.status(400).json({ error: 'The primary admin account cannot be modified via this panel.' });
     }
 
-    if (userToUpdate.role !== 'admin' && role === 'admin') {
+    if (role && userToUpdate.role !== 'admin' && role === 'admin') {
       return res.status(400).json({ error: 'Cannot promote user to admin.' });
     }
 
-    db.prepare('UPDATE users SET name = ?, role = ? WHERE id = ?').run(name, role, targetId);
+    if (role && !['supervisor', 'worker', 'monitor'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role.' });
+    }
+
+    let query = 'UPDATE users SET name = COALESCE(?, name), email = COALESCE(?, email), role = COALESCE(?, role), project_id = ?';
+    let params = [name, email, role, project_id || null];
+
+    if (password) {
+      const hash = bcrypt.hashSync(password, 10);
+      query += ', password_hash = ?';
+      params.push(hash);
+    }
+
+    query += ' WHERE id = ?';
+    params.push(targetId);
+
+    db.prepare(query).run(...params);
+
+    if (project_id) {
+      const proj = db.prepare('SELECT name FROM projects WHERE id = ?').get(project_id);
+      if (proj) {
+        const msg = `You have been assigned to project: ${proj.name}`;
+        createNotification(targetId, msg, 'success');
+        emitNotification(req, targetId, msg, 'success');
+      }
+    }
+
     res.json({ success: true });
   } catch (err) {
+    if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Email already exists.' });
     res.status(500).json({ error: 'Failed to update user: ' + err.message });
   }
 });

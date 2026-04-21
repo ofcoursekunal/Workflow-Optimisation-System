@@ -5,31 +5,56 @@ const auth = require('../middleware/auth');
 
 // GET dashboard summary
 router.get('/summary', auth, (req, res) => {
-  if (req.user.role === 'worker') return res.status(403).json({ error: 'Forbidden' });
+  let projectId = req.user.project_id;
+
+  // Always fetch fresh project_id from DB for supervisors and workers to ensure immediate scoping
+  if (req.user.role === 'supervisor' || req.user.role === 'worker') {
+    const user = db.prepare('SELECT project_id FROM users WHERE id = ?').get(req.user.id);
+    projectId = user ? user.project_id : null;
+  }
+
+  const isScoped = (req.user.role === 'supervisor' || req.user.role === 'worker') && projectId !== null;
 
   const taskCounts = db.prepare(`
-    SELECT status, COUNT(*) as count FROM tasks GROUP BY status
-  `).all();
+    SELECT status, COUNT(*) as count 
+    FROM tasks 
+    ${isScoped ? 'WHERE project_id = ?' : ''}
+    GROUP BY status
+  `).all(...(isScoped ? [projectId] : []));
 
   const machineCounts = db.prepare(`
-    SELECT status, COUNT(*) as count FROM machines GROUP BY status
-  `).all();
+    SELECT status, COUNT(*) as count 
+    FROM machines 
+    ${isScoped ? 'WHERE project_id = ?' : ''}
+    GROUP BY status
+  `).all(...(isScoped ? [projectId] : []));
 
-  const workerCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'worker'").get();
-  const delayedTasks = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'delayed'").get();
+  const workerCount = db.prepare(`
+    SELECT COUNT(*) as count FROM users 
+    WHERE role = 'worker' ${isScoped ? 'AND project_id = ?' : ''}
+  `).get(...(isScoped ? [projectId] : []));
+
+  const delayedTasks = db.prepare(`
+    SELECT COUNT(*) as count FROM tasks 
+    WHERE status = 'delayed' ${isScoped ? 'AND project_id = ?' : ''}
+  `).get(...(isScoped ? [projectId] : []));
+
   const completedToday = db.prepare(`
     SELECT COUNT(*) as count FROM tasks 
     WHERE status = 'completed' AND date(completed_at) = date('now')
-  `).get();
+    ${isScoped ? 'AND project_id = ?' : ''}
+  `).get(...(isScoped ? [projectId] : []));
 
   // Pause reason distribution
   const pauseReasons = db.prepare(`
-    SELECT pause_reason, COUNT(*) as count 
-    FROM task_logs 
-    WHERE action = 'paused' AND pause_reason IS NOT NULL
-    GROUP BY pause_reason 
+    SELECT tl.pause_reason, COUNT(*) as count 
+    FROM task_logs tl
+    JOIN tasks t ON tl.task_id = t.id
+    WHERE tl.action = 'paused' AND tl.pause_reason IS NOT NULL
+    ${isScoped ? 'AND t.project_id = ?' : ''}
+    GROUP BY tl.pause_reason 
     ORDER BY count DESC
-  `).all();
+  `).all(...(isScoped ? [projectId] : []));
 
   // Worker performance
   const workerPerformance = db.prepare(`
@@ -43,9 +68,9 @@ router.get('/summary', auth, (req, res) => {
           THEN (julianday(t.completed_at) - julianday(t.started_at)) * 24 * 60 ELSE NULL END) as avg_completion_min
     FROM users u
     LEFT JOIN tasks t ON t.assigned_worker_id = u.id
-    WHERE u.role = 'worker'
+    WHERE u.role = 'worker' ${isScoped ? 'AND u.project_id = ?' : ''}
     GROUP BY u.id, u.name
-  `).all();
+  `).all(...(isScoped ? [projectId] : []));
 
   // Machine utilization
   const machineUtilization = db.prepare(`
@@ -55,17 +80,19 @@ router.get('/summary', auth, (req, res) => {
       SUM(CASE WHEN t.status IN ('in_progress','delayed') THEN 1 ELSE 0 END) as active_tasks
     FROM machines m
     LEFT JOIN tasks t ON t.machine_id = m.id
+    ${isScoped ? 'WHERE m.project_id = ?' : ''}
     GROUP BY m.id, m.name
-  `).all();
+  `).all(...(isScoped ? [projectId] : []));
 
   // Daily task completion trend (last 7 days)
   const dailyTrend = db.prepare(`
     SELECT date(completed_at) as day, COUNT(*) as count
     FROM tasks
     WHERE status = 'completed' AND completed_at >= date('now', '-7 days')
+    ${isScoped ? 'AND project_id = ?' : ''}
     GROUP BY day
     ORDER BY day ASC
-  `).all();
+  `).all(...(isScoped ? [projectId] : []));
 
   res.json({
     taskCounts,
@@ -82,7 +109,14 @@ router.get('/summary', auth, (req, res) => {
 
 // GET downtime report
 router.get('/downtime', auth, (req, res) => {
-  if (req.user.role === 'worker') return res.status(403).json({ error: 'Forbidden' });
+  let projectId = req.user.project_id;
+
+  if (req.user.role === 'supervisor' || req.user.role === 'worker') {
+    const user = db.prepare('SELECT project_id FROM users WHERE id = ?').get(req.user.id);
+    projectId = user ? user.project_id : null;
+  }
+
+  const isScoped = (req.user.role === 'supervisor' || req.user.role === 'worker') && projectId !== null;
 
   const downtimeByMachine = db.prepare(`
     SELECT m.name as machine_name,
@@ -92,9 +126,10 @@ router.get('/downtime', auth, (req, res) => {
     JOIN tasks t ON tl.task_id = t.id
     JOIN machines m ON t.machine_id = m.id
     WHERE tl.action = 'paused'
+    ${isScoped ? 'AND t.project_id = ?' : ''}
     GROUP BY m.id, tl.pause_reason
     ORDER BY pause_count DESC
-  `).all();
+  `).all(...(isScoped ? [projectId] : []));
 
   const workerDowntime = db.prepare(`
     SELECT u.name, COUNT(tl.id) as pause_count, tl.pause_reason
@@ -102,9 +137,10 @@ router.get('/downtime', auth, (req, res) => {
     JOIN tasks t ON tl.task_id = t.id
     JOIN users u ON t.assigned_worker_id = u.id
     WHERE tl.action = 'paused'
+    ${isScoped ? 'AND t.project_id = ?' : ''}
     GROUP BY u.id, tl.pause_reason
     ORDER BY pause_count DESC
-  `).all();
+  `).all(...(isScoped ? [projectId] : []));
 
   res.json({ downtimeByMachine, workerDowntime });
 });

@@ -84,8 +84,8 @@ export default function AnalyticsPage() {
           </h3>
           {workerChartData.length > 0 ? (
             <div className="h-[220px] w-full relative">
-              <ResponsiveContainer width="100%" height={220} minHeight={220}>
-                <BarChart data={workerChartData}>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={workerChartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="name" tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
@@ -106,8 +106,8 @@ export default function AnalyticsPage() {
           </h3>
           {machineChartData.length > 0 ? (
             <div className="h-[220px] w-full relative">
-              <ResponsiveContainer width="100%" height={220} minHeight={220}>
-                <BarChart data={machineChartData}>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={machineChartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="name" tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
@@ -129,8 +129,8 @@ export default function AnalyticsPage() {
             <TrendingDown size={16} className="text-amber-500" /> Downtime Cause Analysis
           </h3>
           <div className="h-[200px] w-full relative">
-            <ResponsiveContainer width="100%" height={200} minHeight={200}>
-              <BarChart data={pauseData} layout="vertical">
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={pauseData} layout="vertical" margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
                 <XAxis type="number" tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" tick={{ fill: 'var(--muted)', fontSize: 11 }} width={160} axisLine={false} tickLine={false} />

@@ -7,7 +7,7 @@ import { useLanguage } from '../context/LanguageContext';
 import toast from 'react-hot-toast';
 import {
   Plus, Search, Edit2, Trash2, User, Cpu,
-  X, Loader2, AlertCircle, Clock, ClipboardList
+  X, Loader2, AlertCircle, Clock, ClipboardList, Briefcase
 } from 'lucide-react';
 
 const STATUS_ORDER = ['not_started', 'in_progress', 'paused', 'completed', 'delayed'];
@@ -56,14 +56,21 @@ function PriorityBadge({ priority }) {
 
 function TaskFormModal({ onClose, onSave, editTask, workers, machines }) {
   const { t } = useLanguage();
+  const { user } = useAuth();
   const [form, setForm] = useState({
     title: editTask?.title || '',
     description: editTask?.description || '',
     machine_id: editTask?.machine_id || '',
     priority: editTask?.priority || 'medium',
     expected_minutes: editTask?.expected_minutes || 30,
+    project_id: editTask?.project_id || (user?.role === 'supervisor' ? user.project_id : ''),
   });
   const [loading, setLoading] = useState(false);
+  const [projects, setProjects] = useState([]);
+
+  useEffect(() => {
+    api.get('/projects').then(res => setProjects(res.data)).catch(() => { });
+  }, []);
 
   const handleSubmit = async e => {
     e.preventDefault();
@@ -104,13 +111,30 @@ function TaskFormModal({ onClose, onSave, editTask, workers, machines }) {
             <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">{t('assign_machine')}</label>
             <select className="select" value={form.machine_id} onChange={e => setForm(p => ({ ...p, machine_id: e.target.value }))}>
               <option value="">— {t('none')} —</option>
-              {machines.map(m => (
-                <option key={m.id} value={m.id} disabled={m.status === 'breakdown'}>
-                  {m.name} ({m.status === 'breakdown' ? 'Broken' : m.status})
-                </option>
-              ))}
+              {machines
+                .filter(m => user?.role !== 'supervisor' || Number(m.project_id) === Number(user.project_id))
+                .map(m => (
+                  <option key={m.id} value={m.id} disabled={m.status === 'breakdown'}>
+                    {m.name} ({m.status === 'breakdown' ? 'Broken' : m.status})
+                  </option>
+                ))}
             </select>
           </div>
+          {user?.role === 'admin' && (
+            <div>
+              <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Project</label>
+              <select
+                className="select"
+                value={form.project_id}
+                onChange={e => setForm(p => ({ ...p, project_id: e.target.value }))}
+              >
+                <option value="">— {t('none')} —</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">{t('priority')}</label>
@@ -240,6 +264,7 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState([]);
   const [workers, setWorkers] = useState([]);
   const [machines, setMachines] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editTask, setEditTask] = useState(null);
@@ -249,13 +274,20 @@ export default function TasksPage() {
   const [filterStatus, setFilterStatus] = useState(searchParams.get('filter') || '');
   const [filterPriority, setFilterPriority] = useState('');
   const [filterWorker, setFilterWorker] = useState(searchParams.get('workerId') || '');
+  const [filterProject, setFilterProject] = useState('');
 
   const fetchAll = useCallback(async () => {
     try {
-      const [tRes, wRes, mRes] = await Promise.all([api.get('/tasks'), api.get('/users/workers'), api.get('/machines')]);
+      const [tRes, wRes, mRes, pRes] = await Promise.all([
+        api.get('/tasks'),
+        api.get('/users/workers'),
+        api.get('/machines'),
+        api.get('/projects')
+      ]);
       setTasks(tRes.data);
       setWorkers(wRes.data);
       setMachines(mRes.data);
+      setProjects(pRes.data);
     } catch { }
     setLoading(false);
   }, []);
@@ -283,7 +315,8 @@ export default function TasksPage() {
     const matchStatus = !filterStatus || t.status === filterStatus;
     const matchPriority = !filterPriority || t.priority === filterPriority;
     const matchWorker = !filterWorker || String(t.assigned_worker_id) === String(filterWorker);
-    return matchSearch && matchStatus && matchPriority && matchWorker;
+    const matchProject = !filterProject || String(t.project_id) === String(filterProject);
+    return matchSearch && matchStatus && matchPriority && matchWorker && matchProject;
   });
 
   const isWorker = user?.role === 'worker';
@@ -298,7 +331,7 @@ export default function TasksPage() {
           </h1>
           <p className="text-zinc-500 dark:text-zinc-400 mt-1">{isWorker ? `${tasks.length} ${t('my_tasks')}` : t('shopfloor_tasks')}</p>
         </div>
-        {!isWorker && <button onClick={() => { setEditTask(null); setShowForm(true); }} className="btn-primary"><Plus size={18} /> {t('new_task')}</button>}
+        {!isWorker && user?.role === 'supervisor' && <button onClick={() => { setEditTask(null); setShowForm(true); }} className="btn-primary"><Plus size={18} /> {t('new_task')}</button>}
       </div>
 
       <div className="card py-3 px-4 flex flex-col sm:flex-row gap-3">
@@ -316,6 +349,10 @@ export default function TasksPage() {
             <option value="high">{t('high')}</option>
             <option value="medium">{t('medium')}</option>
             <option value="low">{t('low')}</option>
+          </select>
+          <select className="select w-auto" value={filterProject} onChange={e => setFilterProject(e.target.value)}>
+            <option value="">All Projects</option>
+            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
       </div>

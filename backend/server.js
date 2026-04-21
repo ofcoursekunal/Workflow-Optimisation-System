@@ -42,6 +42,7 @@ app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/breaks', require('./routes/breaks'));
 app.use('/api/requests', require('./routes/requests'));
+app.use('/api/projects', require('./routes/projects'));
 
 // Socket.io
 io.on('connection', (socket) => {

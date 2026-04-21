@@ -42,12 +42,12 @@ router.post('/login', (req, res) => {
   if (!valid) return res.status(401).json({ error: 'Invalid credentials.' });
 
   const token = jwt.sign(
-    { id: user.id, name: user.name, email: user.email, role: user.role, profile_picture: user.profile_picture },
+    { id: user.id, name: user.name, email: user.email, role: user.role, profile_picture: user.profile_picture, project_id: user.project_id },
     process.env.JWT_SECRET,
     { expiresIn: '24h' }
   );
 
-  res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, profile_picture: user.profile_picture } });
+  res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, profile_picture: user.profile_picture, project_id: user.project_id } });
 });
 
 // POST /api/auth/register (Admin only in production, open for seeding)
@@ -60,7 +60,8 @@ router.post('/register', (req, res) => {
   const hash = bcrypt.hashSync(password, 10);
   try {
     const result = db.prepare('INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)').run(name, email, hash, role);
-    res.json({ id: result.lastInsertRowid, name, email, role });
+    const newUser = db.prepare('SELECT id, name, email, role, project_id FROM users WHERE id = ?').get(result.lastInsertRowid);
+    res.json(newUser);
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Email already exists.' });
     res.status(500).json({ error: err.message });
@@ -71,7 +72,7 @@ router.post('/register', (req, res) => {
 router.get('/me', auth, (req, res) => {
   console.log('GET /me: Loading profile for id:', req.user.id);
   try {
-    const user = db.prepare('SELECT id, name, email, role, status, is_on_break, profile_picture FROM users WHERE id = ?').get(req.user.id);
+    const user = db.prepare('SELECT id, name, email, role, status, is_on_break, profile_picture, project_id FROM users WHERE id = ?').get(req.user.id);
     if (!user) {
       console.warn('GET /me: User not found in DB:', req.user.id);
       return res.status(404).json({ error: 'User not found' });

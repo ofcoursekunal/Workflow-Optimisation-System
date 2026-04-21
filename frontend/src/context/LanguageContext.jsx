@@ -67,6 +67,11 @@ const translations = {
         break_taken: 'Break Taken',
         break_limit_reached: 'Daily break limit reached',
         requests: 'Requests',
+        projects: 'Projects',
+        project_management: 'Project Management',
+        create_project: 'Create Project',
+        project_name: 'Project Name',
+        project_description: 'Project Description',
     },
     hi: {
         dashboard: 'डैशबोर्ड',
@@ -134,6 +139,11 @@ const translations = {
         requests: 'अनुरोध',
         history: 'इतिहास',
         monitor: 'मॉनिटर',
+        projects: 'परियोजनाएं',
+        project_management: 'परियोजना प्रबंधन',
+        create_project: 'परियोजना बनाएं',
+        project_name: 'परियोजना का नाम',
+        project_description: 'परियोजना का विवरण',
     }
 };
 

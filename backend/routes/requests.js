@@ -12,25 +12,29 @@ function createNotification(userId, message, type = 'info') {
 
 // GET all requests (Supervisor/Admin only)
 router.get('/', auth, (req, res) => {
-    if (req.user.role === 'worker') {
-        // Workers can only see their own requests
-        const requests = db.prepare(`
+    let query = `
       SELECT r.*, u.name as user_name, u.profile_picture as user_picture
       FROM requests r 
       JOIN users u ON r.user_id = u.id 
-      WHERE r.user_id = ? 
-      ORDER BY r.created_at DESC
-    `).all(req.user.id);
-        return res.json(requests);
+    `;
+    const params = [];
+
+    if (req.user.role === 'worker') {
+        query += " WHERE r.user_id = ?";
+        params.push(req.user.id);
+    } else if (req.user.role === 'supervisor') {
+        if (!req.user.project_id) return res.json([]);
+        query += " WHERE u.project_id = ?";
+        params.push(req.user.project_id);
     }
 
-    const requests = db.prepare(`
-    SELECT r.*, u.name as user_name, u.profile_picture as user_picture
-    FROM requests r 
-    JOIN users u ON r.user_id = u.id 
-    ORDER BY r.created_at DESC
-  `).all();
-    res.json(requests);
+    query += " ORDER BY r.created_at DESC";
+    try {
+        const requests = db.prepare(query).all(...params);
+        res.json(requests);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // POST a new request (Worker)
@@ -77,8 +81,21 @@ router.put('/:id', auth, (req, res) => {
         return res.status(400).json({ error: 'Invalid status' });
     }
 
-    const request = db.prepare('SELECT * FROM requests WHERE id = ?').get(requestId);
+    const request = db.prepare(`
+      SELECT r.*, u.project_id as user_project_id 
+      FROM requests r 
+      JOIN users u ON r.user_id = u.id 
+      WHERE r.id = ?
+    `).get(requestId);
+
     if (!request) return res.status(404).json({ error: 'Request not found' });
+
+    if (req.user.role === 'supervisor') {
+        if (request.user_project_id !== req.user.project_id) {
+            return res.status(403).json({ error: 'Forbidden: This worker is not in your project.' });
+        }
+    }
+
     if (request.status !== 'pending') return res.status(400).json({ error: 'Request already processed' });
 
     const io = req.app.get('io');

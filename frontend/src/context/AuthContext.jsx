@@ -23,9 +23,12 @@ export function AuthProvider({ children }) {
           setUser(res.data); // Use fresh data from DB
           localStorage.setItem('shopfloor_user', JSON.stringify(res.data));
         } catch (err) {
-          console.warn('Session invalid, logging out...', err.message);
+          console.warn('Session invalid, logging out...', err.response?.status || err.message);
           logout();
         }
+      } else {
+        // If either token or user is missing, ensure state is clean
+        logout();
       }
       setLoading(false);
     };

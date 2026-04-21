@@ -15,6 +15,7 @@ import UsersPage from './pages/UsersPage';
 import RequestsPage from './pages/RequestsPage';
 import HistoryPage from './pages/HistoryPage';
 import ProfilePage from './pages/ProfilePage';
+import ProjectsPage from './pages/ProjectsPage';
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, loading } = useAuth();
@@ -64,6 +65,7 @@ function AppRoutes() {
       <Route path="/admin/tasks" element={<ProtectedRoute allowedRoles={['admin']}><Layout><TasksPage /></Layout></ProtectedRoute>} />
       <Route path="/admin/machines" element={<ProtectedRoute allowedRoles={['admin']}><Layout><MachinesPage /></Layout></ProtectedRoute>} />
       <Route path="/admin/users" element={<ProtectedRoute allowedRoles={['admin']}><Layout><UsersPage /></Layout></ProtectedRoute>} />
+      <Route path="/admin/projects" element={<ProtectedRoute allowedRoles={['admin']}><Layout><ProjectsPage /></Layout></ProtectedRoute>} />
       <Route path="/admin/analytics" element={<ProtectedRoute allowedRoles={['admin']}><Layout><AnalyticsPage /></Layout></ProtectedRoute>} />
       <Route path="/admin/requests" element={<ProtectedRoute allowedRoles={['admin']}><Layout><RequestsPage /></Layout></ProtectedRoute>} />
 

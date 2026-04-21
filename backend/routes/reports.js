@@ -7,7 +7,14 @@ const auth = require('../middleware/auth');
  * Weekly Performance Report
  */
 router.get('/weekly', auth, (req, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  if (req.user.role !== 'admin' && req.user.role !== 'supervisor' && req.user.role !== 'worker') return res.status(403).json({ error: 'Unauthorized' });
+
+  let projectId = req.user.project_id;
+  if (req.user.role === 'supervisor' || req.user.role === 'worker') {
+    const user = db.prepare('SELECT project_id FROM users WHERE id = ?').get(req.user.id);
+    projectId = user ? user.project_id : null;
+  }
+  const isScoped = (req.user.role === 'supervisor' || req.user.role === 'worker') && projectId !== null;
 
   // Metrics for last 7 days vs previous 7 days
   const now = new Date();
@@ -25,8 +32,9 @@ router.get('/weekly', auth, (req, res) => {
         AVG(CASE WHEN status = 'completed' THEN expected_minutes ELSE NULL END) as avg_expected,
         AVG(CASE WHEN status = 'completed' THEN (strftime('%s', completed_at) - strftime('%s', started_at))/60 ELSE NULL END) as avg_actual
       FROM tasks
-      WHERE created_at BETWEEN ? AND ?
-    `).get(start, end);
+      WHERE (created_at BETWEEN ? AND ?)
+      ${isScoped ? 'AND project_id = ?' : ''}
+    `).get(start, end, ...(isScoped ? [projectId] : []));
   };
 
   const currentStats = getStats(weekAgo, now.toISOString());
@@ -37,9 +45,10 @@ router.get('/weekly', auth, (req, res) => {
     SELECT DATE(created_at) as date, COUNT(*) as count, SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed
     FROM tasks
     WHERE created_at >= ?
+    ${isScoped ? 'AND project_id = ?' : ''}
     GROUP BY DATE(created_at)
     ORDER BY date ASC
-  `).all(weekAgo);
+  `).all(weekAgo, ...(isScoped ? [projectId] : []));
 
   res.json({
     current: currentStats,
@@ -52,11 +61,17 @@ router.get('/weekly', auth, (req, res) => {
  * Monthly Performance Report
  */
 router.get('/monthly', auth, (req, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  if (req.user.role !== 'admin' && req.user.role !== 'supervisor' && req.user.role !== 'worker') return res.status(403).json({ error: 'Unauthorized' });
+
+  let projectId = req.user.project_id;
+  if (req.user.role === 'supervisor' || req.user.role === 'worker') {
+    const user = db.prepare('SELECT project_id FROM users WHERE id = ?').get(req.user.id);
+    projectId = user ? user.project_id : null;
+  }
+  const isScoped = (req.user.role === 'supervisor' || req.user.role === 'worker') && projectId !== null;
 
   const now = new Date();
   const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate()).toISOString();
-  const twoMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate()).toISOString();
 
   const getStats = (start, end) => {
     return db.prepare(`
@@ -68,19 +83,21 @@ router.get('/monthly', auth, (req, res) => {
             THEN (strftime('%s', COALESCE(completed_at, datetime('now'))) - strftime('%s', deadline_at))/60 ELSE 0 END) as total_delay_mins,
         AVG(CASE WHEN status = 'completed' THEN (strftime('%s', completed_at) - strftime('%s', started_at))/60 ELSE NULL END) as avg_completion_time
       FROM tasks
-      WHERE created_at BETWEEN ? AND ?
-    `).get(start, end);
+      WHERE (created_at BETWEEN ? AND ?)
+      ${isScoped ? 'AND project_id = ?' : ''}
+    `).get(start, end, ...(isScoped ? [projectId] : []));
   };
 
   const currentStats = getStats(monthAgo, now.toISOString());
 
-  // Machine Utilization (Simplified: Tasks per machine)
+  // Machine Utilization
   const machineUtilization = db.prepare(`
     SELECT m.name, COUNT(t.id) as task_count, SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) as completed
     FROM machines m
     LEFT JOIN tasks t ON t.machine_id = m.id AND t.created_at >= ?
+    ${isScoped ? 'WHERE m.project_id = ?' : ''}
     GROUP BY m.id
-  `).all(monthAgo);
+  `).all(monthAgo, ...(isScoped ? [projectId] : []));
 
   res.json({
     current: currentStats,
@@ -92,7 +109,14 @@ router.get('/monthly', auth, (req, res) => {
  * Collective Worker Performance
  */
 router.get('/workers', auth, (req, res) => {
-  if (req.user.role !== 'admin' && req.user.role !== 'supervisor') return res.status(403).json({ error: 'Unauthorized' });
+  if (req.user.role !== 'admin' && req.user.role !== 'supervisor' && req.user.role !== 'worker') return res.status(403).json({ error: 'Unauthorized' });
+
+  let projectId = req.user.project_id;
+  if (req.user.role === 'supervisor' || req.user.role === 'worker') {
+    const user = db.prepare('SELECT project_id FROM users WHERE id = ?').get(req.user.id);
+    projectId = user ? user.project_id : null;
+  }
+  const isScoped = (req.user.role === 'supervisor' || req.user.role === 'worker') && projectId !== null;
 
   const workers = db.prepare(`
     SELECT 
@@ -110,25 +134,47 @@ router.get('/workers', auth, (req, res) => {
     FROM users u
     LEFT JOIN tasks t ON t.assigned_worker_id = u.id
     WHERE u.role = 'worker'
+    ${isScoped ? 'AND u.project_id = ?' : ''}
     GROUP BY u.id
-  `).all();
+  `).all(...(isScoped ? [projectId] : []));
 
   res.json(workers);
 });
 
 /**
- * Individual Worker Performance (Daily/Weekly Trends) - ADMIN ONLY
+ * Individual Worker Performance
  */
 router.get('/worker/:id', auth, (req, res) => {
-  if (req.user.role !== 'admin' && req.user.role !== 'supervisor') return res.status(403).json({ error: 'Unauthorized' });
+  if (req.user.role !== 'admin' && req.user.role !== 'supervisor' && req.user.role !== 'worker') return res.status(403).json({ error: 'Unauthorized' });
 
   const targetId = parseInt(req.params.id);
+
+  if (req.user.role === 'supervisor' || req.user.role === 'worker') {
+    const requester = db.prepare('SELECT project_id FROM users WHERE id = ?').get(req.user.id);
+    const worker = db.prepare('SELECT project_id FROM users WHERE id = ?').get(targetId);
+
+    // Workers can only view THEIR OWN report OR reports of someone in THEIR project if we allow it?
+    // Requirement says "only workers which are part of project should be able to see it".
+    // This probably means they see the project's data, not individual workers?
+    // But usually workers only see their own profile.
+    if (req.user.role === 'worker') {
+      if (req.user.id !== targetId) {
+        return res.status(403).json({ error: 'You can only view your own performance report.' });
+      }
+    } else {
+      // Supervisor
+      if (!requester || !worker || requester.project_id === null || requester.project_id !== worker.project_id) {
+        return res.status(403).json({ error: 'You can only view reports for workers in your project.' });
+      }
+    }
+  }
+
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1).toISOString();
 
-  // 1. Daily Trend
+  // Daily Trend
   const dailyTrend = db.prepare(`
     SELECT DATE(completed_at) as date, COUNT(*) as count
     FROM tasks
@@ -137,7 +183,7 @@ router.get('/worker/:id', auth, (req, res) => {
     ORDER BY date ASC
   `).all(targetId, weekAgo);
 
-  // 2. Weekly Trend
+  // Weekly Trend
   const weeklyTrend = db.prepare(`
     SELECT strftime('%W', completed_at) as week_num, COUNT(*) as count
     FROM tasks
@@ -146,7 +192,7 @@ router.get('/worker/:id', auth, (req, res) => {
     ORDER BY week_num ASC
   `).all(targetId, monthAgo);
 
-  // 3. Monthly Trend (Last 6 Months)
+  // Monthly Trend
   const monthlyTrend = db.prepare(`
     SELECT strftime('%Y-%m', completed_at) as month, COUNT(*) as count
     FROM tasks
@@ -155,7 +201,7 @@ router.get('/worker/:id', auth, (req, res) => {
     ORDER BY month ASC
   `).all(targetId, sixMonthsAgo);
 
-  // 4. Activity Logs (Last 10)
+  // Activity Logs
   const activityLogs = db.prepare(`
     SELECT 
       l.action, 
@@ -169,7 +215,7 @@ router.get('/worker/:id', auth, (req, res) => {
     LIMIT 10
   `).all(targetId);
 
-  // 5. Collective
+  // Collective stats
   const collective = db.prepare(`
     SELECT 
       COUNT(*) as total_tasks,
@@ -182,7 +228,7 @@ router.get('/worker/:id', auth, (req, res) => {
     WHERE assigned_worker_id = ?
   `).get(targetId);
 
-  // 6. Break Logs
+  // Break Logs
   const breakLogs = db.prepare(`
     SELECT start_time, end_time, date
     FROM break_logs

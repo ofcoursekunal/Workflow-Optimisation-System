@@ -179,8 +179,8 @@ export default function AdminDashboard() {
             <h3 className="font-semibold mb-6 flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
               <Activity size={18} className="text-zinc-500" /> Task Distribution
             </h3>
-            <div className="h-[240px]">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[240px] w-full">
+              <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
                   <Pie data={pieData} cx="50%" cy="50%" innerRadius={65} outerRadius={90} dataKey="value" label={({ name }) => name}>
                     {pieData.map((e, i) => <Cell key={i} fill={TASK_COLORS[e.name.replace(' ', '_')] || '#a1a1aa'} />)}
@@ -194,8 +194,8 @@ export default function AdminDashboard() {
             <h3 className="font-semibold mb-6 flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
               <TrendingUp size={18} className="text-zinc-500" /> Daily Trend
             </h3>
-            <div className="h-[240px]">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[240px] w-full">
+              <ResponsiveContainer width="100%" height={240}>
                 <LineChart data={summary.dailyTrend}>
                   <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#27272a' : '#e4e4e7'} vertical={false} />
                   <XAxis dataKey="day" tick={{ fontSize: 11, fill: isDark ? '#a1a1aa' : '#71717a' }} axisLine={false} tickLine={false} />
@@ -241,8 +241,8 @@ export default function AdminDashboard() {
         </div>
         <div className="card">
           <h3 className="font-semibold mb-6 text-zinc-900 dark:text-zinc-100">7-Day Productivity Trend</h3>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height={300}>
               <BarChart data={dailyTrend}>
                 <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#27272a' : '#e4e4e7'} vertical={false} />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: isDark ? '#a1a1aa' : '#71717a' }} axisLine={false} tickLine={false} />
@@ -289,8 +289,8 @@ export default function AdminDashboard() {
           <h3 className="font-semibold mb-6 flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
             Machine Utilization (Tasks Assigned)
           </h3>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height={300}>
               <BarChart data={machineUtilization} layout="vertical" margin={{ left: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#27272a' : '#e4e4e7'} horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 11, fill: isDark ? '#a1a1aa' : '#71717a' }} axisLine={false} tickLine={false} />

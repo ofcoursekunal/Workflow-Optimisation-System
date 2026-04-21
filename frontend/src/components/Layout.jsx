@@ -31,6 +31,7 @@ export default function Layout({ children }) {
       { path: '/admin/tasks', label: t('all_tasks'), icon: ClipboardList },
       { path: '/admin/machines', label: t('machines'), icon: Cpu },
       { path: '/admin/users', label: t('users'), icon: Users },
+      { path: '/admin/projects', label: 'Projects', icon: Factory },
       { path: '/admin/analytics', label: t('analytics'), icon: BarChart3 },
       { path: '/history', label: t('history'), icon: HistoryIcon },
     ],
