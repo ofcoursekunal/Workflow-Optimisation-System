@@ -239,4 +239,35 @@ router.delete('/:id', auth, (req, res) => {
   }
 });
 
+// POST log logout reason
+router.post('/logout', auth, (req, res) => {
+  const { userId, pendingTasks, delayedTasks, reason, note, logoutTime } = req.body;
+
+  if (!userId || !reason) {
+    return res.status(400).json({ error: 'userId and reason are required.' });
+  }
+
+  try {
+    db.prepare(`
+      INSERT INTO logout_logs (user_id, pending_tasks, delayed_tasks, reason, note, logout_time)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(userId, pendingTasks || 0, delayedTasks || 0, reason, note || null, logoutTime || new Date().toISOString());
+
+    // If there's pending work, notify supervisors
+    if (pendingTasks > 0 || delayedTasks > 0) {
+      const msg = `⚠️ Worker ${req.user.name} logged out with ${pendingTasks} pending and ${delayedTasks} delayed tasks. Reason: ${reason}`;
+      const supervisors = db.prepare("SELECT id FROM users WHERE role IN ('admin', 'supervisor')").all();
+      supervisors.forEach(s => {
+        createNotification(s.id, msg, 'warning');
+        const io = req.app.get('io');
+        if (io) io.to(`user_${s.id}`).emit('notification:new', { message: msg, type: 'warning' });
+      });
+    }
+
+    res.json({ success: true, message: 'Logout log saved' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save logout log: ' + err.message });
+  }
+});
+
 module.exports = router;

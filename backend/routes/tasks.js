@@ -426,4 +426,23 @@ router.delete('/:id', auth, (req, res) => {
   res.json({ success: true });
 });
 
+// GET pending task status for worker logout validation
+router.get('/pending/:userId', auth, (req, res) => {
+  const userId = req.params.userId;
+
+  try {
+    const pending = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE assigned_worker_id = ? AND status IN ('not_started', 'in_progress', 'paused')").get(userId);
+    const delayed = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE assigned_worker_id = ? AND status = 'delayed'").get(userId);
+    const estimated = db.prepare("SELECT SUM(expected_minutes) as total FROM tasks WHERE assigned_worker_id = ? AND status IN ('not_started', 'in_progress', 'paused', 'delayed')").get(userId);
+
+    res.json({
+      pendingTasks: pending.count || 0,
+      delayedTasks: delayed.count || 0,
+      estimatedTime: estimated.total || 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch pending tasks: ' + err.message });
+  }
+});
+
 module.exports = router;

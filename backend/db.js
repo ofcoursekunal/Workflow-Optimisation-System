@@ -106,6 +106,16 @@ db.exec(`
     assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     unassigned_at DATETIME
   );
+
+  CREATE TABLE IF NOT EXISTS logout_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    pending_tasks INTEGER,
+    delayed_tasks INTEGER,
+    reason TEXT NOT NULL,
+    note TEXT,
+    logout_time DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 const bcrypt = require('bcryptjs');

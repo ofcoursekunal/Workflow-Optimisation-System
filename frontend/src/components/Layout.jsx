@@ -5,6 +5,7 @@ import { useSocket } from '../context/SocketContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import ChatAssistant from './ChatAssistant';
+import LogoutModal from './LogoutModal';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import {
@@ -24,6 +25,8 @@ export default function Layout({ children }) {
   const [notifications, setNotifications] = useState([]);
   const [notifOpen, setNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
+  const [pendingTasksData, setPendingTasksData] = useState(null);
 
   const navItems = {
     admin: [
@@ -77,10 +80,45 @@ export default function Layout({ children }) {
     setNotifications(p => p.map(n => ({ ...n, is_read: 1 })));
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (user?.role === 'worker') {
+      try {
+        const res = await api.get(`/tasks/pending/${user.id}`);
+        if (res.data.pendingTasks > 0 || res.data.delayedTasks > 0) {
+          setPendingTasksData(res.data);
+          setLogoutModalOpen(true);
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to fetch pending tasks', err);
+      }
+    }
+    completeLogout();
+  };
+
+  const completeLogout = () => {
     logout();
     navigate('/login');
     toast.success('Logged out successfully');
+  };
+
+  const handleFinalLogout = async ({ reason, note }) => {
+    try {
+      await api.post('/users/logout', {
+        userId: user.id,
+        pendingTasks: pendingTasksData.pendingTasks,
+        delayedTasks: pendingTasksData.delayedTasks,
+        reason,
+        note,
+        logoutTime: new Date().toISOString()
+      });
+      setLogoutModalOpen(false);
+      completeLogout();
+    } catch (err) {
+      toast.error('Failed to log logout reason');
+      console.error(err);
+      completeLogout();
+    }
   };
 
   const items = navItems[user?.role] || [];
@@ -244,6 +282,16 @@ export default function Layout({ children }) {
 
       {/* Global Chatbot */}
       <ChatAssistant />
+
+      {/* Logout Validation Modal */}
+      {logoutModalOpen && (
+        <LogoutModal
+          isOpen={logoutModalOpen}
+          onClose={() => setLogoutModalOpen(false)}
+          onConfirm={handleFinalLogout}
+          pendingData={pendingTasksData}
+        />
+      )}
     </div>
   );
 }
