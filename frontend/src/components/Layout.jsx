@@ -11,7 +11,7 @@ import toast from 'react-hot-toast';
 import {
   Factory, LayoutDashboard, Cpu, ClipboardList, Users, BarChart3,
   Bell, LogOut, Menu, X, Wifi, WifiOff, Sun, Moon, Languages, Coffee, User,
-  History as HistoryIcon
+  History as HistoryIcon, Star, Trophy, AlertTriangle
 } from 'lucide-react';
 
 export default function Layout({ children }) {
@@ -25,6 +25,7 @@ export default function Layout({ children }) {
   const [notifications, setNotifications] = useState([]);
   const [notifOpen, setNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [alertsCount, setAlertsCount] = useState(0);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [pendingTasksData, setPendingTasksData] = useState(null);
 
@@ -36,6 +37,7 @@ export default function Layout({ children }) {
       { path: '/admin/users', label: t('users'), icon: Users },
       { path: '/projects', label: 'Projects', icon: Factory },
       { path: '/admin/analytics', label: t('analytics'), icon: BarChart3 },
+      { path: '/admin/credits', label: 'Credit System', icon: Trophy },
       { path: '/history', label: t('history'), icon: HistoryIcon },
     ],
     supervisor: [
@@ -45,6 +47,7 @@ export default function Layout({ children }) {
       { path: '/supervisor/analytics', label: t('analytics'), icon: BarChart3 },
       { path: '/projects', label: 'Projects', icon: Factory },
       { path: '/supervisor/requests', label: t('requests'), icon: Coffee },
+      { path: '/supervisor/alerts', label: 'Alerts', icon: AlertTriangle },
       { path: '/history', label: t('history'), icon: HistoryIcon },
     ],
     worker: [
@@ -65,8 +68,13 @@ export default function Layout({ children }) {
       ]);
       setNotifications(nRes.data);
       setUnreadCount(cRes.data.count);
+
+      if (user?.role === 'supervisor' || user?.role === 'admin') {
+        const aRes = await api.get('/supervisor/alerts?status=active');
+        setAlertsCount(aRes.data.length);
+      }
     } catch { }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     fetchNotifications();
@@ -80,45 +88,10 @@ export default function Layout({ children }) {
     setNotifications(p => p.map(n => ({ ...n, is_read: 1 })));
   };
 
-  const handleLogout = async () => {
-    if (user?.role === 'worker') {
-      try {
-        const res = await api.get(`/tasks/pending/${user.id}`);
-        if (res.data.pendingTasks > 0 || res.data.delayedTasks > 0) {
-          setPendingTasksData(res.data);
-          setLogoutModalOpen(true);
-          return;
-        }
-      } catch (err) {
-        console.error('Failed to fetch pending tasks', err);
-      }
-    }
-    completeLogout();
-  };
-
-  const completeLogout = () => {
+  const handleLogout = () => {
     logout();
     navigate('/login');
     toast.success('Logged out successfully');
-  };
-
-  const handleFinalLogout = async ({ reason, note }) => {
-    try {
-      await api.post('/users/logout', {
-        userId: user.id,
-        pendingTasks: pendingTasksData.pendingTasks,
-        delayedTasks: pendingTasksData.delayedTasks,
-        reason,
-        note,
-        logoutTime: new Date().toISOString()
-      });
-      setLogoutModalOpen(false);
-      completeLogout();
-    } catch (err) {
-      toast.error('Failed to log logout reason');
-      console.error(err);
-      completeLogout();
-    }
   };
 
   const items = navItems[user?.role] || [];
@@ -167,11 +140,18 @@ export default function Layout({ children }) {
             <Link
               key={path}
               to={path}
-              className={`sidebar-item ${location.pathname === path ? 'active' : ''}`}
+              className={`sidebar-item ${location.pathname === path ? 'active' : ''} flex items-center justify-between`}
               onClick={() => setSidebarOpen(false)}
             >
-              <Icon size={18} />
-              <span className="flex-1">{label}</span>
+              <div className="flex items-center gap-3">
+                <Icon size={18} />
+                <span>{label}</span>
+              </div>
+              {label === 'Alerts' && alertsCount > 0 && (
+                <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md animate-pulse shadow-sm">
+                  {alertsCount}
+                </span>
+              )}
             </Link>
           ))}
         </nav>
@@ -283,15 +263,7 @@ export default function Layout({ children }) {
       {/* Global Chatbot */}
       <ChatAssistant />
 
-      {/* Logout Validation Modal */}
-      {logoutModalOpen && (
-        <LogoutModal
-          isOpen={logoutModalOpen}
-          onClose={() => setLogoutModalOpen(false)}
-          onConfirm={handleFinalLogout}
-          pendingData={pendingTasksData}
-        />
-      )}
+
     </div>
   );
 }

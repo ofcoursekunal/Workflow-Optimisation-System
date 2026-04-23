@@ -18,6 +18,8 @@ db.exec(`
     role TEXT NOT NULL CHECK(role IN ('admin','supervisor','worker','monitor')),
     status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle','busy','paused')),
     is_on_break INTEGER DEFAULT 0,
+    is_live INTEGER DEFAULT 0,
+    shift_start_time DATETIME,
     last_idle_at DATETIME,
     profile_picture TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -46,12 +48,10 @@ db.exec(`
     started_at DATETIME,
     completed_at DATETIME,
     deadline_at DATETIME,
+    last_logout_reason TEXT,
+    last_logout_time DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
-  
-  -- Ensure machines status check has 'occupied'
-  -- Note: We recreate or alter if needed, but here we'll just make sure the SQL reflects it for new setups
-  -- To fix existing, we'll run a migration script.
   
   CREATE TABLE IF NOT EXISTS break_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,7 +114,32 @@ db.exec(`
     delayed_tasks INTEGER,
     reason TEXT NOT NULL,
     note TEXT,
+    role TEXT NOT NULL DEFAULT 'worker',
     logout_time DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS shift_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    start_time DATETIME,
+    end_time DATETIME,
+    pending_tasks INTEGER,
+    delayed_tasks INTEGER,
+    reason TEXT,
+    note TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    worker_id INTEGER NOT NULL REFERENCES users(id),
+    worker_name TEXT NOT NULL,
+    pending_tasks INTEGER,
+    delayed_tasks INTEGER,
+    reason TEXT NOT NULL,
+    note TEXT,
+    status TEXT NOT NULL DEFAULT 'unread' CHECK(status IN ('unread', 'reviewed')),
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
 

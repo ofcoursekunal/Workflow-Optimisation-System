@@ -18,18 +18,22 @@ router.get('/captcha', (req, res) => {
 // POST /api/auth/login
 router.post('/login', (req, res) => {
   const { email, password, captcha_answer, captcha_token } = req.body;
+  console.log('Login request received:', { email, captcha_answer, hasToken: !!captcha_token });
 
   if (!email || !password || captcha_answer === undefined || !captcha_token) {
+    console.warn('Login 400: Missing fields', { email: !!email, password: !!password, captcha_answer: captcha_answer !== undefined, captcha_token: !!captcha_token });
     return res.status(400).json({ error: 'All fields including captcha are required.' });
   }
 
   // Verify Captcha
   try {
-    const decoded = jwt.verify(captcha_token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(captcha_token, process.env.JWT_SECRET || 'fallback_secret');
     if (parseInt(captcha_answer) !== decoded.sum) {
+      console.warn('Login 400: Incorrect captcha answer', { provided: captcha_answer, expected: decoded.sum });
       return res.status(400).json({ error: 'Incorrect captcha answer.' });
     }
   } catch (err) {
+    console.warn('Login 400: Captcha error', err.message);
     return res.status(400).json({ error: 'Captcha expired or invalid.' });
   }
 
@@ -72,7 +76,7 @@ router.post('/register', (req, res) => {
 router.get('/me', auth, (req, res) => {
   console.log('GET /me: Loading profile for id:', req.user.id);
   try {
-    const user = db.prepare('SELECT id, name, email, role, status, is_on_break, profile_picture, project_id FROM users WHERE id = ?').get(req.user.id);
+    const user = db.prepare('SELECT id, name, email, role, status, is_on_break, profile_picture, project_id, is_live, shift_start_time FROM users WHERE id = ?').get(req.user.id);
     if (!user) {
       console.warn('GET /me: User not found in DB:', req.user.id);
       return res.status(404).json({ error: 'User not found' });

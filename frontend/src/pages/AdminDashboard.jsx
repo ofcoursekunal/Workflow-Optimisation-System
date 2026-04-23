@@ -6,13 +6,16 @@ import { useSocket } from '../context/SocketContext';
 import { useTheme } from '../context/ThemeContext';
 import {
   TrendingUp, Calendar, Users, Cpu, Clock,
-  CheckCircle2, AlertTriangle, RefreshCw, ChevronRight, Activity, ClipboardList, X, Circle
+  CheckCircle2, AlertTriangle, RefreshCw, ChevronRight, Activity, ClipboardList, X, Circle,
+  BellRing
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend
 } from 'recharts';
 import WorkerAnalytics from '../components/WorkerAnalytics';
+import AlertsPanel from '../components/AlertsPanel';
+import Leaderboard from '../components/Leaderboard';
 
 const TASK_COLORS = {
   not_started: '#a1a1aa', // zinc-400
@@ -22,13 +25,65 @@ const TASK_COLORS = {
   delayed: '#ef4444'      // red-500
 };
 
+
+
+function AlertsWidget({ onOpen }) {
+  const [activeCount, setActiveCount] = useState(0);
+  const { socket } = useSocket();
+
+  const fetchCount = useCallback(async () => {
+    try {
+      const res = await api.get('/supervisor/alerts?status=active');
+      setActiveCount(res.data.length);
+    } catch { }
+  }, []);
+
+  useEffect(() => {
+    fetchCount();
+  }, [fetchCount]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const updateCount = () => fetchCount();
+    socket.on('worker_logout_alert', updateCount);
+    return () => socket.off('worker_logout_alert', updateCount);
+  }, [socket, fetchCount]);
+
+  if (activeCount === 0) return null;
+
+  return (
+    <div
+      onClick={onOpen}
+      className="group relative p-5 rounded-3xl bg-amber-500 text-white shadow-xl shadow-amber-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer overflow-hidden animate-bounce-subtle"
+    >
+      <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+        <AlertTriangle size={80} />
+      </div>
+      <div className="flex items-center gap-4 relative z-10">
+        <div className="p-3 rounded-2xl bg-white/20 backdrop-blur-md">
+          <BellRing className="text-white" size={24} />
+        </div>
+        <div>
+          <h3 className="text-2xl font-black">{activeCount} Worker Alerts</h3>
+          <p className="text-xs font-bold text-white/80 uppercase tracking-widest">Action Required</p>
+        </div>
+        <div className="ml-auto p-2 rounded-full bg-white/10 group-hover:bg-white/20 transition-colors">
+          <ChevronRight size={20} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
+
   const [activeTab, setActiveTab] = useState('overview');
   const [summary, setSummary] = useState(null);
   const [weeklyData, setWeeklyData] = useState(null);
   const [monthlyData, setMonthlyData] = useState(null);
   const [workerData, setWorkerData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isAlertsOpen, setIsAlertsOpen] = useState(false);
   const [selectedWorker, setSelectedWorker] = useState(null);
   const { socket } = useSocket();
   const { isDark } = useTheme();
@@ -148,6 +203,12 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {user?.role === 'supervisor' && (
+          <div className="mb-8">
+            <AlertsWidget onOpen={() => setIsAlertsOpen(true)} />
+          </div>
+        )}
+
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { label: 'Total Tasks', value: totalTasks, icon: ClipboardList, color: 'text-blue-500', path: `/${user?.role}/tasks` },
@@ -205,36 +266,41 @@ export default function AdminDashboard() {
         </div>
 
         <div className="grid lg:grid-cols-2 gap-6">
-          <div className="card min-w-0">
-            <h3 className="font-semibold mb-6 flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
-              <Activity size={18} className="text-zinc-500" /> Task Distribution
-            </h3>
-            <div className="h-[240px] w-full">
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
-                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={65} outerRadius={90} dataKey="value" label={({ name }) => name}>
-                    {pieData.map((e, i) => <Cell key={i} fill={TASK_COLORS[e.name.replace(' ', '_')] || '#a1a1aa'} />)}
-                  </Pie>
-                  <Tooltip contentStyle={tooltipStyle} />
-                </PieChart>
-              </ResponsiveContainer>
+          <div className="space-y-6">
+            <div className="card min-w-0">
+              <h3 className="font-semibold mb-6 flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+                <Activity size={18} className="text-zinc-500" /> Task Distribution
+              </h3>
+              <div className="h-[240px] w-full">
+                <ResponsiveContainer width="100%" height={240}>
+                  <PieChart>
+                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={65} outerRadius={90} dataKey="value" label={({ name }) => name}>
+                      {pieData.map((e, i) => <Cell key={i} fill={TASK_COLORS[e.name.replace(' ', '_')] || '#a1a1aa'} />)}
+                    </Pie>
+                    <Tooltip contentStyle={tooltipStyle} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <div className="card min-w-0">
+              <h3 className="font-semibold mb-6 flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+                <TrendingUp size={18} className="text-zinc-500" /> Daily Trend
+              </h3>
+              <div className="h-[240px] w-full">
+                <ResponsiveContainer width="100%" height={240}>
+                  <LineChart data={summary.dailyTrend}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#27272a' : '#e4e4e7'} vertical={false} />
+                    <XAxis dataKey="day" tick={{ fontSize: 11, fill: isDark ? '#a1a1aa' : '#71717a' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: isDark ? '#a1a1aa' : '#71717a' }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={tooltipStyle} />
+                    <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} name="Tasks" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
-          <div className="card min-w-0">
-            <h3 className="font-semibold mb-6 flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
-              <TrendingUp size={18} className="text-zinc-500" /> Daily Trend
-            </h3>
-            <div className="h-[240px] w-full">
-              <ResponsiveContainer width="100%" height={240}>
-                <LineChart data={summary.dailyTrend}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#27272a' : '#e4e4e7'} vertical={false} />
-                  <XAxis dataKey="day" tick={{ fontSize: 11, fill: isDark ? '#a1a1aa' : '#71717a' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: isDark ? '#a1a1aa' : '#71717a' }} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} name="Tasks" />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+          <div className="space-y-6">
+            <Leaderboard />
           </div>
         </div>
       </div>
@@ -347,6 +413,7 @@ export default function AdminDashboard() {
             <thead>
               <tr className="text-left text-zinc-500 dark:text-zinc-400 uppercase text-xs font-semibold tracking-wider border-b border-zinc-200 dark:border-zinc-800">
                 <th className="pb-3 px-3">Worker</th>
+                <th className="pb-3 text-center">Credits</th>
                 <th className="pb-3 text-center">Tasks</th>
                 <th className="pb-3 text-center">Completed</th>
                 <th className="pb-3 text-center">Delayed</th>
@@ -376,6 +443,12 @@ export default function AdminDashboard() {
                         {w.is_on_break === 1 && <span className="text-[10px] font-bold text-amber-600 dark:text-amber-500 uppercase flex items-center gap-1 leading-none pt-1 animate-pulse">
                           <Circle size={4} fill="currentColor" /> Break
                         </span>}
+                      </div>
+                    </td>
+                    <td className="py-4 text-center">
+                      <div className="flex flex-col items-center">
+                        <span className="text-blue-600 dark:text-blue-400 font-black text-base">{w.total_credits || 0}</span>
+                        <span className="text-[10px] uppercase tracking-tighter text-zinc-400 font-bold">Points</span>
                       </div>
                     </td>
                     <td className="py-4 text-center text-zinc-600 dark:text-zinc-300 font-medium">{w.total_tasks}</td>
@@ -452,6 +525,11 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      <AlertsPanel
+        isOpen={isAlertsOpen}
+        onClose={() => setIsAlertsOpen(false)}
+      />
     </div>
   );
 }

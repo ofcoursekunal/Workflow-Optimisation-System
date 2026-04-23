@@ -12,7 +12,7 @@ import {
 
 const STATUS_ORDER = ['not_started', 'in_progress', 'paused', 'completed', 'delayed'];
 
-function StatusBadge({ status, unassigned, workerStatus, machineStatus, deadline, completedAt }) {
+function StatusBadge({ status, unassigned, workerStatus, machineStatus, deadline, completedAt, lastLogoutReason, lastLogoutTime }) {
   const { t } = useLanguage();
 
   let delayInfo = null;
@@ -39,7 +39,25 @@ function StatusBadge({ status, unassigned, workerStatus, machineStatus, deadline
 
   return (
     <div className="flex flex-col gap-1">
-      <span className={`badge badge-${status}`}>{t(status)}</span>
+      <div className="flex items-center gap-2">
+        <span className={`badge badge-${status}`}>{t(status)}</span>
+        {status !== 'completed' && lastLogoutReason && (
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-amber-600 dark:text-amber-500 text-[10px] font-bold group/logout relative cursor-help">
+            <AlertTriangle size={10} />
+            Worker Logged Out
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl opacity-0 group-hover/logout:opacity-100 transition-opacity pointer-events-none z-50">
+              <p className="text-white text-[10px] font-bold mb-1">Incomplete - Worker Logged Out</p>
+              <p className="text-zinc-400 text-[10px] leading-relaxed">
+                <span className="text-zinc-500">Reason:</span> {lastLogoutReason}
+              </p>
+              <p className="text-zinc-500 text-[10px] mt-1 italic">
+                {new Date(lastLogoutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </p>
+              <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-zinc-900" />
+            </div>
+          </div>
+        )}
+      </div>
       {delayInfo && (
         <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-tighter animate-pulse flex items-center gap-1">
           <AlertCircle size={10} /> {delayInfo}
@@ -63,6 +81,7 @@ function TaskFormModal({ onClose, onSave, editTask, workers, machines }) {
     machine_id: editTask?.machine_id || '',
     priority: editTask?.priority || 'medium',
     expected_minutes: editTask?.expected_minutes || 30,
+    credit_value: editTask?.credit_value || 1,
     project_id: editTask?.project_id || (user?.role === 'supervisor' ? user.project_id : ''),
   });
   const [loading, setLoading] = useState(false);
@@ -135,18 +154,31 @@ function TaskFormModal({ onClose, onSave, editTask, workers, machines }) {
               </select>
             </div>
           )}
-          <div className="grid sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">{t('priority')}</label>
               <select className="select" value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value }))}>
-                <option value="high">{t('high')}</option>
-                <option value="medium">{t('medium')}</option>
                 <option value="low">{t('low')}</option>
+                <option value="medium">{t('medium')}</option>
+                <option value="high">{t('high')}</option>
               </select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">{t('expected_time')}</label>
-              <input className="input" type="number" min={1} value={form.expected_minutes} onChange={e => setForm(p => ({ ...p, expected_minutes: parseInt(e.target.value) }))} />
+              <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Credit Value</label>
+              <input
+                type="number"
+                className="input"
+                min="0"
+                value={form.credit_value}
+                onChange={e => setForm(p => ({ ...p, credit_value: parseInt(e.target.value) || 0 }))}
+                placeholder="Default: 1"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">{t('expected')} (min)</label>
+              <input type="number" className="input" value={form.expected_minutes} onChange={e => setForm(p => ({ ...p, expected_minutes: e.target.value }))} />
             </div>
           </div>
           <div className="flex gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800 mt-4">
@@ -365,7 +397,7 @@ export default function TasksPage() {
             <table className="w-full text-sm">
               <thead className="bg-zinc-50/80 dark:bg-zinc-800/20 border-b border-zinc-200 dark:border-zinc-800">
                 <tr className="text-left text-zinc-500 dark:text-zinc-400 text-[11px] uppercase tracking-wider font-semibold">
-                  {[t('task'), t('worker'), t('machine'), t('priority'), t('status'), t('expected'), ''].map((h, i) => <th key={i} className="px-5 py-3">{h}</th>)}
+                  {[t('task'), t('worker'), 'Credits', t('machine'), t('priority'), t('status'), t('expected'), ''].map((h, i) => <th key={i} className="px-5 py-3">{h}</th>)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/50">
@@ -384,6 +416,7 @@ export default function TasksPage() {
                         <span className="truncate max-w-[100px]">{task.worker_name || t('unassigned')}</span>
                       </div>
                     </td>
+                    <td className="px-5 py-4 font-bold text-blue-600 dark:text-blue-400">+{task.credit_value || 1}</td>
                     <td className="px-5 py-4">{task.machine_name || '—'}</td>
                     <td className="px-5 py-4"><PriorityBadge priority={task.priority} /></td>
                     <td className="px-5 py-4">
@@ -392,6 +425,8 @@ export default function TasksPage() {
                         unassigned={!task.assigned_worker_id}
                         deadline={task.deadline_at}
                         completedAt={task.completed_at}
+                        lastLogoutReason={task.last_logout_reason}
+                        lastLogoutTime={task.last_logout_time}
                       />
                     </td>
                     <td className="px-5 py-4">{task.expected_minutes} min</td>

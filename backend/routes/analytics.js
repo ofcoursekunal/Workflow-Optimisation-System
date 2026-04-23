@@ -58,7 +58,7 @@ router.get('/summary', auth, (req, res) => {
 
   // Worker performance
   const workerPerformance = db.prepare(`
-    SELECT u.name, 
+    SELECT u.name, u.total_credits,
       COUNT(t.id) as total_tasks,
       SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) as completed,
       SUM(CASE WHEN t.status = 'delayed' THEN 1 ELSE 0 END) as delayed,

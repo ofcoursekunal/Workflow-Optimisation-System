@@ -10,12 +10,12 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:3000", "http://127.0.0.1:3000"],
+    origin: ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"],
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
   },
   allowEIO3: true,
-  transports: ['websocket', 'polling']
+  transports: ['polling', 'websocket']
 });
 
 // Middleware
@@ -46,6 +46,9 @@ app.use('/api/reports', require('./routes/reports'));
 app.use('/api/breaks', require('./routes/breaks'));
 app.use('/api/requests', require('./routes/requests'));
 app.use('/api/projects', require('./routes/projects'));
+app.use('/api/supervisor', require('./routes/supervisor'));
+app.use('/api/credits', require('./routes/credits'));
+app.use('/api/credit-settings', require('./routes/credit_settings'));
 
 // Socket.io
 io.on('connection', (socket) => {

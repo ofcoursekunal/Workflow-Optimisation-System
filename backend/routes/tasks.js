@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
+const creditService = require('../services/creditService');
 
 function createNotification(userId, message, type = 'info') {
   try {
@@ -30,24 +31,38 @@ router.get('/', auth, (req, res) => {
   const { projectId } = req.query;
   let tasks;
   let query = `
-    SELECT t.*, u.name as worker_name, u.status as worker_status, u.profile_picture as worker_picture, m.name as machine_name, m.status as machine_status, s.name as supervisor_name
+    SELECT t.*, u.name as worker_name, u.status as worker_status, u.profile_picture as worker_picture, m.name as machine_name, m.status as machine_status, s.name as supervisor_name,
+    (SELECT SUM(credits) FROM credit_logs cl WHERE cl.task_id = t.id) as credits_earned
     FROM tasks t
     LEFT JOIN users u ON t.assigned_worker_id = u.id
     LEFT JOIN machines m ON t.machine_id = m.id
     LEFT JOIN users s ON t.created_by = s.id
-  `;
+`;
   const params = [];
 
   if (req.user.role === 'worker') {
     query += " WHERE t.assigned_worker_id = ?";
     params.push(req.user.id);
-  } else if (req.user.role === 'supervisor') {
-    if (!req.user.project_id) return res.json([]);
-    query += " WHERE t.project_id = ?";
-    params.push(req.user.project_id);
-  } else if (projectId) {
-    query += " WHERE t.project_id = ?";
-    params.push(projectId);
+  } else {
+    // Start WHERE clause if needed
+    const conditions = [];
+    if (req.user.role === 'supervisor') {
+      if (!req.user.project_id) return res.json([]);
+      conditions.push("t.project_id = ?");
+      params.push(req.user.project_id);
+    } else if (projectId) {
+      conditions.push("t.project_id = ?");
+      params.push(projectId);
+    }
+
+    if (req.query.workerId) {
+      conditions.push("t.assigned_worker_id = ?");
+      params.push(req.query.workerId);
+    }
+
+    if (conditions.length > 0) {
+      query += " WHERE " + conditions.join(" AND ");
+    }
   }
 
   query += " ORDER BY t.created_at DESC";
@@ -81,6 +96,19 @@ router.get('/pool', auth, (req, res) => {
 
   const tasks = db.prepare(query).all(...params);
   res.json(tasks);
+});
+
+// GET pending tasks summary for worker logout/go-offline
+router.get('/pending/:userId', auth, (req, res) => {
+  try {
+    const pendingTasks = db.prepare(`SELECT COUNT(*) as count FROM tasks WHERE assigned_worker_id = ? AND status IN ('not_started', 'in_progress', 'paused')`).get(req.params.userId).count;
+    const delayedTasks = db.prepare(`SELECT COUNT(*) as count FROM tasks WHERE assigned_worker_id = ? AND status = 'delayed'`).get(req.params.userId).count;
+    const estimatedTime = db.prepare(`SELECT SUM(expected_minutes) as est FROM tasks WHERE assigned_worker_id = ? AND status IN ('not_started', 'in_progress', 'paused', 'delayed')`).get(req.params.userId).est || 0;
+
+    res.json({ pendingTasks, delayedTasks, estimatedTime });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch pending tasks: ' + err.message });
+  }
 });
 
 // claim task route
@@ -154,7 +182,7 @@ router.get('/:id', auth, (req, res) => {
 // POST create task (Admin/Supervisor)
 router.post('/', auth, (req, res) => {
   if (req.user.role === 'worker') return res.status(403).json({ error: 'Forbidden' });
-  const { title, description, machine_id, priority, expected_minutes } = req.body;
+  const { title, description, machine_id, priority, expected_minutes, credit_value } = req.body;
   let project_id = req.body.project_id;
 
   if (req.user.role === 'supervisor') {
@@ -175,9 +203,9 @@ router.post('/', auth, (req, res) => {
   }
 
   const result = db.prepare(`
-    INSERT INTO tasks (title, description, machine_id, priority, expected_minutes, created_by, status, project_id)
-    VALUES (?, ?, ?, ?, ?, ?, 'not_started', ?)
-  `).run(title, description || '', machine_id || null, priority || 'medium', expected_minutes || 30, req.user.id, project_id || null);
+    INSERT INTO tasks (title, description, machine_id, priority, expected_minutes, created_by, status, project_id, credit_value)
+    VALUES (?, ?, ?, ?, ?, ?, 'not_started', ?, ?)
+  `).run(title, description || '', machine_id || null, priority || 'medium', expected_minutes || 30, req.user.id, project_id || null, credit_value || 1);
 
   const newTask = db.prepare(`
     SELECT t.*, m.name as machine_name, s.name as supervisor_name, m.status as machine_status
@@ -193,7 +221,7 @@ router.post('/', auth, (req, res) => {
 });
 
 // PUT update task status (Worker actions + Supervisor override)
-router.put('/:id', auth, (req, res) => {
+router.put('/:id', auth, async (req, res) => {
   const taskId = req.params.id;
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
   if (!task) return res.status(404).json({ error: 'Task not found' });
@@ -209,7 +237,7 @@ router.put('/:id', auth, (req, res) => {
     }
   }
 
-  const { action, pause_reason, note, title, machine_id, assigned_worker_id, priority, expected_minutes, status_override } = req.body;
+  const { action, pause_reason, note, title, machine_id, assigned_worker_id, priority, expected_minutes, status_override, credit_value } = req.body;
   const io = req.app.get('io');
   const now = new Date().toISOString();
   let updateFields = {};
@@ -341,6 +369,8 @@ router.put('/:id', auth, (req, res) => {
     }
   }
 
+  if (credit_value !== undefined) updateFields.credit_value = credit_value;
+
   if (Object.keys(updateFields).length > 0) {
     const setClauses = Object.keys(updateFields).map(k => `${k} = ?`).join(', ');
     const values = [...Object.values(updateFields), taskId];
@@ -360,7 +390,11 @@ router.put('/:id', auth, (req, res) => {
     WHERE t.id = ?
   `).get(taskId);
 
-  if (logAction === 'completed') {
+  if (logAction === 'completed' || updateFields.status === 'completed') {
+    await creditService.awardTaskCompletion(taskId);
+    if (io && task.assigned_worker_id) {
+      io.emit('credits:updated', { userId: task.assigned_worker_id });
+    }
     const supervisors = db.prepare("SELECT id FROM users WHERE role IN ('admin','supervisor')").all();
     supervisors.forEach(s => createNotification(s.id, `Task "${updatedTask.title}" completed by ${req.user.name}`, 'success'));
   }

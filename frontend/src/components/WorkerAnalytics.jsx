@@ -13,13 +13,18 @@ import {
 export default function WorkerAnalytics({ workerId }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [logoutSummary, setLogoutSummary] = useState(null);
 
   useEffect(() => {
     const fetchStats = async () => {
       setLoading(true);
       try {
-        const res = await api.get(`/reports/worker/${workerId}`);
-        setData(res.data);
+        const [statsRes, logoutRes] = await Promise.all([
+          api.get(`/reports/worker/${workerId}`),
+          api.get(`/users/${workerId}/logout-summary`)
+        ]);
+        setData(statsRes.data);
+        setLogoutSummary(logoutRes.data);
       } catch (err) {
         console.error('Failed to fetch worker stats');
       } finally {
@@ -64,6 +69,41 @@ export default function WorkerAnalytics({ workerId }) {
           </div>
         ))}
       </div>
+
+      {logoutSummary && (
+        <div className="card border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
+          <h4 className="text-sm font-bold mb-4 flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+            <History size={16} className="text-zinc-500" /> Last Logout Summary
+          </h4>
+          <div className="flex flex-col md:flex-row md:items-center gap-6">
+            <div className="flex-1">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800">
+                  <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">Pending Tasks</p>
+                  <p className="text-xl font-black text-zinc-900 dark:text-zinc-50">{logoutSummary.pending_tasks}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800">
+                  <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">Delayed Tasks</p>
+                  <p className="text-xl font-black text-red-500">{logoutSummary.delayed_tasks}</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex-[2] space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-tighter px-2 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded">Reason</span>
+                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{logoutSummary.reason}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-tighter px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 rounded">Note</span>
+                <p className="text-xs text-zinc-500 italic">{logoutSummary.note || 'No note provided'}</p>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] text-zinc-400 mt-2">
+                <Clock size={12} /> {new Date(logoutSummary.logout_time).toLocaleString()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Break History Section */}
       <div className="card">

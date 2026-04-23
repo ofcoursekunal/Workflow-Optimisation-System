@@ -239,34 +239,80 @@ router.delete('/:id', auth, (req, res) => {
   }
 });
 
-// POST log logout reason
-router.post('/logout', auth, (req, res) => {
-  const { userId, pendingTasks, delayedTasks, reason, note, logoutTime } = req.body;
+// POST go-live
+router.post('/go-live', auth, (req, res) => {
+  const { userId, startTime } = req.body;
+  if (!userId) return res.status(400).json({ error: 'userId is required.' });
 
-  if (!userId || !reason) {
-    return res.status(400).json({ error: 'userId and reason are required.' });
+  try {
+    db.prepare(`UPDATE users SET is_live = 1, shift_start_time = ? WHERE id = ?`).run(startTime || new Date().toISOString(), userId);
+    res.json({ success: true, message: 'Shift started' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to go live: ' + err.message });
+  }
+});
+
+// POST go-offline
+router.post('/go-offline', auth, (req, res) => {
+  const { userId, pendingTasks, delayedTasks, reason, note, endTime } = req.body;
+  const role = req.user.role;
+
+  if (!userId) {
+    return res.status(400).json({ error: 'userId is required.' });
   }
 
   try {
-    db.prepare(`
-      INSERT INTO logout_logs (user_id, pending_tasks, delayed_tasks, reason, note, logout_time)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(userId, pendingTasks || 0, delayedTasks || 0, reason, note || null, logoutTime || new Date().toISOString());
+    const user = db.prepare('SELECT shift_start_time, name FROM users WHERE id = ?').get(userId);
+    const start = user?.shift_start_time || null;
+    const end = endTime || new Date().toISOString();
 
-    // If there's pending work, notify supervisors
-    if (pendingTasks > 0 || delayedTasks > 0) {
-      const msg = `⚠️ Worker ${req.user.name} logged out with ${pendingTasks} pending and ${delayedTasks} delayed tasks. Reason: ${reason}`;
-      const supervisors = db.prepare("SELECT id FROM users WHERE role IN ('admin', 'supervisor')").all();
-      supervisors.forEach(s => {
-        createNotification(s.id, msg, 'warning');
-        const io = req.app.get('io');
-        if (io) io.to(`user_${s.id}`).emit('notification:new', { message: msg, type: 'warning' });
-      });
+    db.prepare(`
+      INSERT INTO shift_logs (user_id, start_time, end_time, pending_tasks, delayed_tasks, reason, note)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, start, end, pendingTasks || 0, delayedTasks || 0, reason || null, note || null);
+
+    db.prepare(`UPDATE users SET is_live = 0, shift_start_time = NULL WHERE id = ?`).run(userId);
+
+    if (role === 'worker' && (pendingTasks > 0 || delayedTasks > 0)) {
+      db.prepare(`
+        INSERT INTO alerts (worker_id, worker_name, pending_tasks, delayed_tasks, reason, note, timestamp, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'unread')
+      `).run(userId, req.user.name, pendingTasks || 0, delayedTasks || 0, reason || 'Unknown', note || null, end);
+
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('worker_offline_alert', {
+          workerId: userId,
+          workerName: req.user.name,
+          pendingTasks,
+          delayedTasks,
+          reason,
+          note,
+          timestamp: end
+        });
+      }
     }
 
-    res.json({ success: true, message: 'Logout log saved' });
+    res.json({ success: true, message: 'Shift ended' });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to save logout log: ' + err.message });
+    res.status(500).json({ error: 'Failed to go offline: ' + err.message });
+  }
+});
+
+// GET logout summary for a specific user (legacy, kept for compat if needed, simplified)
+router.get('/:id/logout-summary', auth, (req, res) => {
+  try {
+    const summary = db.prepare(`
+      SELECT * FROM shift_logs 
+      WHERE user_id = ? 
+      ORDER BY end_time DESC 
+      LIMIT 1
+    `).get(req.params.id);
+
+    if (!summary) return res.json(null);
+    res.json(summary);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch summary: ' + err.message });
   }
 });
 

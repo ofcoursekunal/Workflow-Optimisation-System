@@ -13,7 +13,7 @@ export function SocketProvider({ children }) {
     if (!user) return;
 
     const socket = io('http://127.0.0.1:5000', {
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000

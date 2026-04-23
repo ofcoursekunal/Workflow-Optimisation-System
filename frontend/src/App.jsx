@@ -16,6 +16,8 @@ import RequestsPage from './pages/RequestsPage';
 import HistoryPage from './pages/HistoryPage';
 import ProfilePage from './pages/ProfilePage';
 import ProjectsPage from './pages/ProjectsPage';
+import CreditSettings from './pages/Admin/CreditSettings';
+import SupervisorAlerts from './pages/SupervisorAlerts';
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, loading } = useAuth();
@@ -69,6 +71,7 @@ function AppRoutes() {
       <Route path="/projects" element={<ProtectedRoute allowedRoles={['admin', 'supervisor', 'worker']}><Layout><ProjectsPage /></Layout></ProtectedRoute>} />
       <Route path="/admin/analytics" element={<ProtectedRoute allowedRoles={['admin']}><Layout><AnalyticsPage /></Layout></ProtectedRoute>} />
       <Route path="/admin/requests" element={<ProtectedRoute allowedRoles={['admin']}><Layout><RequestsPage /></Layout></ProtectedRoute>} />
+      <Route path="/admin/credits" element={<ProtectedRoute allowedRoles={['admin']}><Layout><CreditSettings /></Layout></ProtectedRoute>} />
 
       {/* Supervisor */}
       <Route path="/supervisor" element={<ProtectedRoute allowedRoles={['supervisor']}><Layout><AdminDashboard /></Layout></ProtectedRoute>} />
@@ -76,6 +79,7 @@ function AppRoutes() {
       <Route path="/supervisor/machines" element={<ProtectedRoute allowedRoles={['supervisor']}><Layout><MachinesPage /></Layout></ProtectedRoute>} />
       <Route path="/supervisor/analytics" element={<ProtectedRoute allowedRoles={['supervisor']}><Layout><AnalyticsPage /></Layout></ProtectedRoute>} />
       <Route path="/supervisor/requests" element={<ProtectedRoute allowedRoles={['supervisor']}><Layout><RequestsPage /></Layout></ProtectedRoute>} />
+      <Route path="/supervisor/alerts" element={<ProtectedRoute allowedRoles={['supervisor']}><Layout><SupervisorAlerts /></Layout></ProtectedRoute>} />
 
       {/* Worker */}
       <Route path="/worker" element={<ProtectedRoute allowedRoles={['worker']}><Layout><WorkerDashboard /></Layout></ProtectedRoute>} />
