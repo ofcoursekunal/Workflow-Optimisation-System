@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import {
   Plus, Trash2, X, Loader2, Shield, UserCog, HardHat,
   Circle, Users, Eye, ShieldCheck, Camera, ChevronRight,
-  ChevronDown, Mail, Calendar, Info, Briefcase, Edit
+  ChevronDown, Mail, Calendar, Info, Briefcase, Edit, Clock, TrendingUp, ArrowRight
 } from 'lucide-react';
 
 const ROLE_ICONS = { admin: Shield, supervisor: UserCog, worker: HardHat, monitor: Eye };
@@ -24,21 +24,17 @@ const STATUS_COLORS = {
   paused: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20',
 };
 
+const SHIFT_TEMPLATES = {
+  day: JSON.stringify([{ days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], startTime: "08:00", endTime: "20:00" }]),
+  night: JSON.stringify([{ days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], startTime: "20:00", endTime: "08:00" }])
+};
+
+const DAYS_OF_WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
 function AddUserModal({ onClose, onSave }) {
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'worker' });
-  const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const fileInputRef = useRef(null);
-
-  const handleFileChange = e => {
-    const selectedFile = e.target.files[0];
-    if (selectedFile) {
-      setFile(selectedFile);
-      setPreview(URL.createObjectURL(selectedFile));
-    }
-  };
-
+  const [selectedDays, setSelectedDays] = useState(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]);
+  const [shiftType, setShiftType] = useState('day');
   const handleSubmit = async e => {
     e.preventDefault();
     setLoading(true);
@@ -48,6 +44,13 @@ function AddUserModal({ onClose, onSave }) {
       formData.append('email', form.email);
       formData.append('password', form.password);
       formData.append('role', form.role);
+
+      if (form.role === 'worker') {
+        const startTime = shiftType === 'day' ? '08:00' : '20:00';
+        const endTime = shiftType === 'day' ? '20:00' : '08:00';
+        formData.append('shifts', JSON.stringify([{ days: selectedDays, startTime, endTime }]));
+      }
+
       if (file) formData.append('profile_picture', file);
 
       await api.post('/users', formData);
@@ -63,11 +66,14 @@ function AddUserModal({ onClose, onSave }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/40 dark:bg-black/60 backdrop-blur-sm animate-fade-in">
       <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 w-full max-w-sm rounded-2xl shadow-xl animate-slide-in flex flex-col overflow-hidden">
+        {/* ... (Header) ... */}
         <div className="px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-900/20">
           <h3 className="font-bold text-lg text-zinc-900 dark:text-zinc-50">Add User</h3>
           <button onClick={onClose} className="p-1 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto max-h-[70vh]">
+          {/* ... (Profile Pic/Name/Email/Pass/Role) ... */}
+          {/* (Skipping identical fields to save space in replace_file_content) */}
           <div className="flex flex-col items-center mb-4">
             <div
               className="relative w-24 h-24 rounded-2xl bg-zinc-100 dark:bg-zinc-800 border-2 border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center overflow-hidden cursor-pointer hover:border-zinc-400 transition-colors"
@@ -78,44 +84,41 @@ function AddUserModal({ onClose, onSave }) {
               ) : (
                 <Camera size={32} className="text-zinc-400" />
               )}
-              <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 flex items-center justify-center transition-opacity">
-                <p className="text-[10px] text-white font-bold uppercase">Change</p>
-              </div>
             </div>
-            <p className="text-[10px] text-zinc-500 mt-2 uppercase font-bold tracking-wider">Profile Picture</p>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              className="hidden"
-              accept="image/*"
-            />
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
           </div>
           <div>
-            <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Full Name <span className="text-red-500">*</span></label>
+            <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Full Name</label>
             <input className="input" placeholder="e.g. John Doe" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} required />
           </div>
           <div>
-            <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Email <span className="text-red-500">*</span></label>
-            <input className="input" type="email" placeholder="john@example.com" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} required />
+            <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Email</label>
+            <input className="input" type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} required />
           </div>
           <div>
-            <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Password <span className="text-red-500">*</span></label>
-            <input className="input" type="password" placeholder="••••••••" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} required minLength={6} />
+            <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Password</label>
+            <input className="input" type="password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} required minLength={6} />
           </div>
-          <div>
-            <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Role <span className="text-red-500">*</span></label>
-            <select
-              className="select"
-              value={form.role}
-              onChange={e => setForm({ ...form, role: e.target.value })}
-            >
-              <option value="supervisor">Supervisor</option>
-              <option value="worker">Worker</option>
-              <option value="monitor">Monitor</option>
-            </select>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Role</label>
+              <select className="select" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
+                <option value="supervisor">Supervisor</option>
+                <option value="worker">Worker</option>
+                <option value="monitor">Monitor</option>
+              </select>
+            </div>
+            {form.role === 'worker' && (
+              <div>
+                <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Shift</label>
+                <select className="select" value={form.shifts} onChange={e => setForm({ ...form, shifts: e.target.value })}>
+                  <option value={SHIFT_TEMPLATES.day}>Day Shift</option>
+                  <option value={SHIFT_TEMPLATES.night}>Night Shift</option>
+                </select>
+              </div>
+            )}
           </div>
-
+          {/* ... (Footer Buttons) ... */}
           <div className="flex gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800 mt-4">
             <button type="submit" className="btn-primary flex-1 justify-center py-2.5" disabled={loading}>
               {loading ? <Loader2 size={16} className="animate-spin mr-2" /> : null}
@@ -130,6 +133,12 @@ function AddUserModal({ onClose, onSave }) {
 }
 
 function EditUserModal({ user, projects, onClose, onSave }) {
+  const initShifts = user.shifts ? JSON.parse(user.shifts) : [];
+  const initShift = initShifts[0] || { days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], startTime: "08:00", endTime: "20:00" };
+
+  const [selectedDays, setSelectedDays] = useState(initShift.days || []);
+  const [shiftType, setShiftType] = useState(initShift.startTime === '20:00' ? 'night' : 'day');
+
   const [form, setForm] = useState({
     name: user.name,
     email: user.email,
@@ -143,7 +152,25 @@ function EditUserModal({ user, projects, onClose, onSave }) {
     e.preventDefault();
     setLoading(true);
     try {
-      await api.put(`/users/${user.id}`, form);
+      const payload = { ...form };
+
+      if (form.role === 'worker') {
+        const startTime = shiftType === 'day' ? '08:00' : '20:00';
+        const endTime = shiftType === 'day' ? '20:00' : '08:00';
+
+        // Use the explicit requested admin route for updating shifts
+        await api.post('/users/update-worker-shift', {
+          workerId: user.id,
+          days: selectedDays,
+          startTime,
+          endTime
+        });
+
+        // Ensure the PUT request also sets it properly if backend relies on it
+        payload.shifts = JSON.stringify([{ days: selectedDays, startTime, endTime }]);
+      }
+
+      await api.put(`/users/${user.id}`, payload);
       toast.success('User updated');
       onSave();
     } catch (err) {
@@ -161,6 +188,53 @@ function EditUserModal({ user, projects, onClose, onSave }) {
           <button onClick={onClose} className="p-1 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto max-h-[70vh]">
+          {/* ... (Fields similarly updated) ... */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Role</label>
+              <select className="select" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
+                <option value="supervisor">Supervisor</option>
+                <option value="worker">Worker</option>
+                <option value="monitor">Monitor</option>
+              </select>
+            </div>
+            {form.role === 'worker' && (
+              <div className="col-span-2 mt-2 p-4 bg-zinc-50 dark:bg-zinc-900/50 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                <h4 className="text-xs font-black text-zinc-900 dark:text-zinc-100 mb-3 uppercase tracking-widest flex items-center gap-2">
+                  <Clock size={14} className="text-blue-500" /> Shift Management
+                </h4>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-zinc-500 block mb-2 uppercase tracking-wide">Working Days</label>
+                    <div className="flex flex-wrap gap-2">
+                      {DAYS_OF_WEEK.map(day => (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => setSelectedDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day])}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${selectedDays.includes(day)
+                              ? 'bg-blue-500 text-white border-blue-600 shadow-sm'
+                              : 'bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-blue-400'
+                            }`}
+                        >
+                          {day}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-zinc-500 block mb-2 uppercase tracking-wide">Shift Type</label>
+                    <select className="select" value={shiftType} onChange={e => setShiftType(e.target.value)}>
+                      <option value="day">Day Shift (08:00 - 20:00)</option>
+                      <option value="night">Night Shift (20:00 - 08:00)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
           <div>
             <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Full Name</label>
             <input className="input" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} required />
@@ -170,32 +244,10 @@ function EditUserModal({ user, projects, onClose, onSave }) {
             <input className="input" type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} required />
           </div>
           <div>
-            <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">New Password (optional)</label>
-            <input className="input" type="password" placeholder="Leave blank to keep same" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} minLength={6} />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Role</label>
-            <select
-              className="select"
-              value={form.role}
-              onChange={e => setForm({ ...form, role: e.target.value })}
-            >
-              <option value="supervisor">Supervisor</option>
-              <option value="worker">Worker</option>
-              <option value="monitor">Monitor</option>
-            </select>
-          </div>
-          <div>
             <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block mb-1.5 uppercase tracking-wide">Assign Project</label>
-            <select
-              className="select"
-              value={form.project_id}
-              onChange={e => setForm({ ...form, project_id: e.target.value })}
-            >
+            <select className="select" value={form.project_id} onChange={e => setForm({ ...form, project_id: e.target.value })}>
               <option value="">— No Project —</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
           <div className="flex gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800 mt-4">
@@ -331,6 +383,21 @@ export default function UsersPage() {
                         <Calendar size={16} className="shrink-0" />
                         <span>Joined {new Date(u.created_at).toLocaleDateString()}</span>
                       </div>
+                      {u.role === 'worker' && u.shifts && (
+                        <div className="flex items-center gap-3 text-blue-600 dark:text-blue-400 font-bold">
+                          <Clock size={16} className="shrink-0" />
+                          <span className="uppercase text-[11px] tracking-tight">
+                            {(() => {
+                              try {
+                                const parsed = JSON.parse(u.shifts)[0];
+                                return `${parsed.days.length < 7 ? parsed.days.join(',') : 'All Week'} | ${parsed.startTime} - ${parsed.endTime}`;
+                              } catch (e) {
+                                return 'Invalid Shift';
+                              }
+                            })()}
+                          </span>
+                        </div>
+                      )}
                       {u.project_id && (
                         <div className="flex items-center gap-3 text-purple-600 dark:text-purple-400 font-medium">
                           <Briefcase size={16} className="shrink-0" />

@@ -47,16 +47,15 @@ const upload = multer({
 router.get('/', auth, (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   try {
-    const users = db.prepare('SELECT id, name, email, role, status, is_on_break, is_live, profile_picture, project_id, created_at FROM users').all();
+    const users = db.prepare('SELECT id, name, email, role, status, is_on_break, is_live, shifts, profile_picture, project_id, created_at FROM users').all();
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch users: ' + err.message });
   }
 });
-
 // GET workers only
 router.get('/workers', auth, (req, res) => {
-  let query = "SELECT id, name, email, status, is_on_break, is_live, profile_picture, project_id FROM users WHERE role = 'worker'";
+  let query = "SELECT id, name, email, status, is_on_break, is_live, shifts, profile_picture, project_id FROM users WHERE role = 'worker'";
   let projectId = req.user.project_id;
   if (req.user.role === 'supervisor' || req.user.role === 'worker') {
     const user = db.prepare('SELECT project_id FROM users WHERE id = ?').get(req.user.id);
@@ -71,6 +70,12 @@ router.get('/workers', auth, (req, res) => {
     query += " AND project_id = -1";
   }
   const workers = db.prepare(query).all(...params);
+  // Parse shifts JSON for each worker
+  workers.forEach(w => {
+    if (w.shifts) {
+      try { w.shifts = JSON.parse(w.shifts); } catch (e) { w.shifts = []; }
+    }
+  });
   res.json(workers);
 });
 
@@ -93,7 +98,6 @@ router.get('/supervisors', auth, (req, res) => {
   const supervisors = db.prepare(query).all(...params);
   res.json(supervisors);
 });
-
 // POST create user (Admin only)
 router.post('/', auth, (req, res) => {
   upload.single('profile_picture')(req, res, function (err) {
@@ -104,7 +108,7 @@ router.post('/', auth, (req, res) => {
 
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
 
-    const { name, email, password, role, project_id } = req.body;
+    const { name, email, password, role, project_id, shifts } = req.body;
     const profile_picture = req.file ? `/uploads/${req.file.filename}` : null;
 
     const missing = [];
@@ -125,7 +129,9 @@ router.post('/', auth, (req, res) => {
 
     const hash = bcrypt.hashSync(password, 10);
     try {
-      const result = db.prepare('INSERT INTO users (name, email, password_hash, role, profile_picture, project_id) VALUES (?, ?, ?, ?, ?, ?)').run(name, email, hash, role, profile_picture, project_id || null);
+      const result = db.prepare('INSERT INTO users (name, email, password_hash, role, profile_picture, project_id, shifts) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+        name, email, hash, role, profile_picture, project_id || null, shifts || null
+      );
       const newUserId = result.lastInsertRowid;
 
       if (project_id) {
@@ -147,7 +153,7 @@ router.post('/', auth, (req, res) => {
 // PUT update user (Admin only)
 router.put('/:id', auth, (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
-  const { name, email, password, role, project_id } = req.body;
+  const { name, email, password, role, project_id, shifts } = req.body;
   const targetId = req.params.id;
 
   try {
@@ -167,8 +173,8 @@ router.put('/:id', auth, (req, res) => {
       return res.status(400).json({ error: 'Invalid role.' });
     }
 
-    let query = 'UPDATE users SET name = COALESCE(?, name), email = COALESCE(?, email), role = COALESCE(?, role), project_id = ?';
-    let params = [name, email, role, project_id || null];
+    let query = 'UPDATE users SET name = COALESCE(?, name), email = COALESCE(?, email), role = COALESCE(?, role), project_id = ?, shifts = COALESCE(?, shifts)';
+    let params = [name, email, role, project_id || null, shifts || null];
 
     if (password) {
       const hash = bcrypt.hashSync(password, 10);
@@ -236,6 +242,26 @@ router.delete('/:id', auth, (req, res) => {
       return res.status(400).json({ error: 'Cannot delete user: This user has associated tasks or logs. Please reassign or delete their tasks first.' });
     }
     res.status(500).json({ error: 'Failed to delete user: ' + err.message });
+  }
+});
+
+// POST update-worker-shift (Admin only)
+router.post('/update-worker-shift', auth, (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  const { workerId, days, startTime, endTime } = req.body;
+
+  if (!workerId) return res.status(400).json({ error: 'workerId is required.' });
+  if (!days || !Array.isArray(days) || days.length === 0) return res.status(400).json({ error: 'At least one working day must be selected.' });
+  if (!startTime || !endTime) return res.status(400).json({ error: 'startTime and endTime are required.' });
+
+  try {
+    const shiftData = JSON.stringify([{ days, startTime, endTime }]);
+    db.prepare('UPDATE users SET shifts = ? WHERE id = ? AND role = ?').run(shiftData, workerId, 'worker');
+
+    // Optionally alert via Socket if necessary
+    res.json({ success: true, message: 'Worker shift updated successfully.', shifts: shiftData });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update shift: ' + err.message });
   }
 });
 

@@ -49,6 +49,7 @@ app.use('/api/projects', require('./routes/projects'));
 app.use('/api/supervisor', require('./routes/supervisor'));
 app.use('/api/credits', require('./routes/credits'));
 app.use('/api/credit-settings', require('./routes/credit_settings'));
+app.use('/api/planning', require('./routes/planning'));
 
 // Socket.io
 io.on('connection', (socket) => {

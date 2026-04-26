@@ -10,7 +10,7 @@ import api from '../utils/api';
 import toast from 'react-hot-toast';
 import {
   Factory, LayoutDashboard, Cpu, ClipboardList, Users, BarChart3,
-  Bell, LogOut, Menu, X, Wifi, WifiOff, Sun, Moon, Languages, Coffee, User,
+  Bell, LogOut, Menu, X, Wifi, WifiOff, Sun, Moon, Languages, Coffee, User, CalendarDays,
   History as HistoryIcon, Star, Trophy, AlertTriangle
 } from 'lucide-react';
 
@@ -36,6 +36,7 @@ export default function Layout({ children }) {
       { path: '/admin/machines', label: t('machines'), icon: Cpu },
       { path: '/admin/users', label: t('users'), icon: Users },
       { path: '/projects', label: 'Projects', icon: Factory },
+      { path: '/planning', label: 'Production Planning', icon: CalendarDays },
       { path: '/admin/analytics', label: t('analytics'), icon: BarChart3 },
       { path: '/admin/credits', label: 'Credit System', icon: Trophy },
       { path: '/history', label: t('history'), icon: HistoryIcon },
@@ -46,6 +47,7 @@ export default function Layout({ children }) {
       { path: '/supervisor/machines', label: t('machines'), icon: Cpu },
       { path: '/supervisor/analytics', label: t('analytics'), icon: BarChart3 },
       { path: '/projects', label: 'Projects', icon: Factory },
+      { path: '/planning', label: 'Production Planning', icon: CalendarDays },
       { path: '/supervisor/requests', label: t('requests'), icon: Coffee },
       { path: '/supervisor/alerts', label: 'Alerts', icon: AlertTriangle },
       { path: '/history', label: t('history'), icon: HistoryIcon },

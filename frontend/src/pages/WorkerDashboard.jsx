@@ -193,7 +193,7 @@ function OfflineValidationModal({ pendingData, onClose, onConfirm }) {
   );
 }
 
-function TaskCard({ task, onAction, isPool, onClaim, hideActions, isOnBreak }) {
+function TaskCard({ task, onAction, hideActions, isOnBreak }) {
   const { t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [showPause, setShowPause] = useState(false);
@@ -206,26 +206,20 @@ function TaskCard({ task, onAction, isPool, onClaim, hideActions, isOnBreak }) {
 
   useEffect(() => {
     if (task.status === 'completed' || task.status === 'not_started') return;
-
     const update = () => {
       let totalSeconds = task.total_elapsed_seconds || 0;
       if (task.status === 'in_progress' && task.last_action_at) {
         totalSeconds += Math.floor((Date.now() - new Date(task.last_action_at).getTime()) / 1000);
       }
-
       const expectedSeconds = task.expected_minutes * 60;
       const diffSeconds = expectedSeconds - totalSeconds;
-
       const isExceeded = diffSeconds < 0;
       const absSeconds = Math.abs(diffSeconds);
-
       const h = Math.floor(absSeconds / 3600);
       const m = Math.floor((absSeconds % 3600) / 60);
       const s = Math.floor(absSeconds % 60);
       const formatted = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-
       const p = (totalSeconds / expectedSeconds) * 100;
-
       setTimeState({
         elapsed: formatted,
         progress: p,
@@ -233,7 +227,6 @@ function TaskCard({ task, onAction, isPool, onClaim, hideActions, isOnBreak }) {
         displayLabel: isExceeded ? 'Exceeded' : 'Time Left'
       });
     };
-
     update();
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
@@ -242,10 +235,7 @@ function TaskCard({ task, onAction, isPool, onClaim, hideActions, isOnBreak }) {
   const overtime = task.deadline_at && new Date() > new Date(task.deadline_at);
 
   const handleAction = async (action, pauseReason, note) => {
-    if (action === 'pause') {
-      action = 'pause_request';
-    }
-
+    if (action === 'pause') action = 'pause_request';
     setLoading(true);
     try {
       await api.put(`/tasks/${task.id}`, { action, pause_reason: pauseReason, note });
@@ -272,23 +262,8 @@ function TaskCard({ task, onAction, isPool, onClaim, hideActions, isOnBreak }) {
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap mb-1.5">
             <span className={`badge badge-${task.priority} capitalize`}>{t(task.priority)}</span>
-            {!isPool && <span className={`badge badge-${task.status}`}>{t(task.status)}</span>}
-            {isPool && <span className="badge bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/20">{t('task_pool')}</span>}
-            {overtime && task.status !== 'completed' && (
-              <span className="badge bg-red-50 text-red-700 border border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20">
-                <AlertTriangle size={10} /> OVERDUE
-              </span>
-            )}
-            {task.status === 'completed' && task.credits_earned > 0 && (
-              <span className="badge bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20 font-black">
-                +{task.credits_earned} Credits Earned
-              </span>
-            )}
-            {task.status !== 'completed' && task.credit_value > 0 && (
-              <span className="badge bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20 font-black">
-                Worth {task.credit_value} Credits
-              </span>
-            )}
+            <span className={`badge badge-${task.status}`}>{t(task.status)}</span>
+            {overtime && task.status !== 'completed' && <span className="badge bg-red-50 text-red-700 border-red-200 font-bold uppercase text-[9px]">Overdue</span>}
           </div>
           <h3 className="font-bold text-zinc-900 dark:text-zinc-50 text-lg leading-snug tracking-tight">{task.title}</h3>
           {task.description && <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{task.description}</p>}
@@ -297,89 +272,36 @@ function TaskCard({ task, onAction, isPool, onClaim, hideActions, isOnBreak }) {
 
       <div className="flex items-center gap-4 text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-5">
         {task.machine_name && (
-          <span className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${task.machine_status === 'breakdown' ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'}`}>
-            <Cpu size={12} className={task.machine_status === 'breakdown' ? 'text-red-500' : 'text-zinc-400'} /> {task.machine_name}
-            {task.machine_status === 'breakdown' && <span className="ml-1 flex items-center gap-1 font-bold text-[10px] uppercase text-red-600"><AlertTriangle size={10} /> Machine Broken</span>}
+          <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-md">
+            <Cpu size={12} className="text-zinc-400" /> {task.machine_name}
           </span>
         )}
-        <span className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400">
-          <Clock size={12} className="text-zinc-400" /> {task.expected_minutes}m {t('expected')}
-        </span>
-        {task.status === 'delayed' && (
-          <span className="flex items-center gap-1.5 text-red-600 font-bold animate-pulse">
-            <AlertTriangle size={12} /> {t('delayed')}
-          </span>
-        )}
+        <span className="flex items-center gap-1.5"><Clock size={12} /> {task.expected_minutes}m Expected</span>
       </div>
 
       {(task.status === 'in_progress' || task.status === 'paused') && (
         <div className="mb-5 space-y-3">
-          <div className={`flex justify-between items-center px-4 py-2 rounded-xl border transition-colors ${timeState.isExceeded ? 'bg-red-50 dark:bg-red-500/10 border-red-100 dark:border-red-500/20' : 'bg-blue-50 dark:bg-blue-500/10 border-blue-100 dark:border-blue-500/20'}`}>
-            <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${timeState.isExceeded ? 'text-red-600 dark:text-red-400' : 'text-blue-700 dark:text-blue-400'}`}>{timeState.displayLabel}</span>
-            <span className={`text-xl font-mono font-bold tracking-tighter ${timeState.isExceeded ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`}>{timeState.elapsed}</span>
+          <div className={`flex justify-between items-center px-4 py-2 rounded-xl border ${timeState.isExceeded ? 'bg-red-50 border-red-100' : 'bg-blue-50 border-blue-100'}`}>
+            <span className="text-[10px] font-black uppercase text-blue-700">{timeState.displayLabel}</span>
+            <span className="text-xl font-mono font-bold text-blue-600">{timeState.elapsed}</span>
           </div>
-          <ProgressBar
-            progress={timeState.progress}
-            label={t('status')}
-            sublabel={timeState.isExceeded ? 'Deadline Exceeded' : `${Math.round(timeState.progress)}%`}
-            color={timeState.isExceeded ? 'bg-red-500' : 'bg-blue-500'}
-          />
+          <ProgressBar progress={timeState.progress} color={timeState.isExceeded ? 'bg-red-500' : 'bg-blue-500'} sublabel={`${Math.round(timeState.progress)}%`} />
         </div>
       )}
 
-      {!hideActions && (
-        <>
-          {isPool ? (
-            <button
-              className={`btn-primary w-full py-3 ${isOnBreak || task.machine_status === 'breakdown' ? 'opacity-50 cursor-not-allowed' : ''}`}
-              onClick={() => !isOnBreak && task.machine_status !== 'breakdown' && onClaim()}
-              disabled={loading || isOnBreak || task.machine_status === 'breakdown'}
-              title={isOnBreak ? 'Finish your current active task before accepting a new one' : task.machine_status === 'breakdown' ? 'Cannot claim: Machine is broken' : ''}
-            >
-              {loading ? <Loader2 size={16} className="animate-spin mr-1" /> : <Play size={16} className="mr-1" />}
-              {t('accept_task')}
-            </button>
-          ) : task.status === 'completed' ? (
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-center gap-2 py-3 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
-                <CheckCircle size={18} className="text-emerald-600 dark:text-emerald-400" />
-                <span className="text-emerald-600 dark:text-emerald-400 font-semibold tracking-wide">{t('done')}</span>
-              </div>
-              {task.credits_earned > 0 && (
-                <div className="text-center animate-bounce-in">
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600">Reward Secured</span>
-                  <p className="text-sm font-black text-amber-500">+{task.credits_earned} Performance Points</p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex gap-2">
-              {(task.status === 'not_started' || task.status === 'paused') && (
-                <button
-                  className={`btn-success flex-1 justify-center py-3 ${isOnBreak || task.machine_status === 'breakdown' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  onClick={() => !isOnBreak && task.machine_status !== 'breakdown' && handleAction('start')}
-                  disabled={loading || isOnBreak || task.machine_status === 'breakdown'}
-                  title={isOnBreak ? 'Finish your current active task first' : task.machine_status === 'breakdown' ? 'Machine is broken' : ''}
-                >
-                  {loading ? <Loader2 size={16} className="animate-spin mr-1" /> : <Play size={16} className="mr-1" />}
-                  {task.status === 'paused' ? t('resume_task') : t('start_task')}
-                </button>
-              )}
-              {task.status === 'in_progress' && <>
-                <button className="btn-secondary text-amber-600 border-amber-200 flex-1 justify-center py-3" onClick={() => setShowPause(true)} disabled={loading}>
-                  {loading ? <Loader2 size={16} className="animate-spin mr-1" /> : <Pause size={16} className="mr-1" />}
-                  {t('pause_task')}
-                </button>
-                <button className={`btn-success flex-1 justify-center py-3 ${task.machine_status === 'breakdown' ? 'opacity-50 cursor-not-allowed' : ''}`} onClick={() => task.machine_status !== 'breakdown' && handleAction('complete')} disabled={loading || task.machine_status === 'breakdown'}>
-                  {loading ? <Loader2 size={16} className="animate-spin mr-1" /> : <CheckCircle size={16} className="mr-1" />}
-                  {t('done')}
-                </button>
-              </>}
-            </div>
+      {!hideActions && task.status !== 'completed' && (
+        <div className="flex gap-2">
+          {(task.status === 'not_started' || task.status === 'paused') && (
+            <button className="btn-success flex-1 py-3" onClick={() => !isOnBreak && handleAction('start')} disabled={loading || isOnBreak}><Play size={16} className="mr-2" /> Start</button>
           )}
-        </>
+          {task.status === 'in_progress' && (
+            <>
+              <button className="btn-secondary flex-1 py-3" onClick={() => setShowPause(true)} disabled={loading}><Pause size={16} className="mr-2" /> Pause</button>
+              <button className="btn-success flex-1 py-3" onClick={() => handleAction('complete')} disabled={loading}><CheckCircle size={16} className="mr-2" /> Complete</button>
+            </>
+          )}
+        </div>
       )}
-
       {showPause && <PauseModal onClose={() => setShowPause(false)} onConfirm={(reason, note) => { setShowPause(false); handleAction('pause', reason, note); }} />}
     </div>
   );
@@ -390,7 +312,6 @@ export default function WorkerDashboard() {
   const { socket } = useSocket();
   const { t } = useLanguage();
   const [tasks, setTasks] = useState([]);
-  const [poolTasks, setPoolTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [projectName, setProjectName] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -399,7 +320,6 @@ export default function WorkerDashboard() {
   const [breakTimeLeft, setBreakTimeLeft] = useState('');
   const [pendingRequests, setPendingRequests] = useState([]);
 
-  // Shift Control State
   const [isLive, setIsLive] = useState(Boolean(user?.is_live));
   const [validatingOffline, setValidatingOffline] = useState(false);
   const [offlinePendingData, setOfflinePendingData] = useState(null);
@@ -412,25 +332,6 @@ export default function WorkerDashboard() {
     } catch { }
   }, []);
 
-  useEffect(() => {
-    if (!breakStatus.is_on_break || !breakStatus.current_break) return;
-    const update = () => {
-      const start = new Date(breakStatus.current_break.start_time).getTime();
-      const durationMs = (breakStatus.duration_mins || 30) * 60 * 1000;
-      const elapsed = Date.now() - start;
-      const p = (elapsed / durationMs) * 100;
-      setBreakProgress(p);
-
-      const leftMs = Math.max(0, durationMs - elapsed);
-      const mins = Math.floor(leftMs / 60000);
-      const secs = Math.floor((leftMs % 60000) / 1000);
-      setBreakTimeLeft(`${mins}:${secs.toString().padStart(2, '0')}`);
-    };
-    update();
-    const timer = setInterval(update, 1000);
-    return () => clearInterval(timer);
-  }, [breakStatus.is_on_break, breakStatus.current_break, breakStatus.duration_mins]);
-
   const fetchBreakStatus = useCallback(async () => {
     try {
       const res = await api.get('/breaks/status');
@@ -438,33 +339,10 @@ export default function WorkerDashboard() {
     } catch { }
   }, []);
 
-  const handleBreak = async (action) => {
-    if (action === 'start') {
-      try {
-        await api.post('/requests', { type: 'break' });
-        toast.success('Break request sent to supervisor');
-        fetchRequests();
-      } catch (err) {
-        toast.error(err.response?.data?.error || 'Failed to send break request');
-      }
-      return;
-    }
-
-    try {
-      await api.post(`/breaks/${action}`);
-      toast.success(t('active'));
-      fetchBreakStatus();
-      fetchTasks();
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Break action failed');
-    }
-  };
-
   const fetchTasks = useCallback(async () => {
     try {
-      const [resMyTasks, resPoolTasks] = await Promise.all([api.get('/tasks'), api.get('/tasks/pool')]);
-      setTasks(resMyTasks.data);
-      setPoolTasks(resPoolTasks.data);
+      const res = await api.get('/tasks');
+      setTasks(res.data);
     } catch { }
     setLoading(false);
   }, []);
@@ -476,95 +354,55 @@ export default function WorkerDashboard() {
     } catch { }
   }, []);
 
-  const handleClaim = async (taskId) => {
-    try {
-      await api.put(`/tasks/${taskId}/claim`);
-      toast.success(t('active'));
-      fetchTasks();
-    } catch (err) { toast.error('Claim failed'); }
-  };
-
   const handleGoLive = async () => {
     setShiftLoading(true);
     try {
       await api.post('/users/go-live', { userId: user.id, startTime: new Date().toISOString() });
       setIsLive(true);
-      toast.success('🟢 Shift Started - You are now Live');
-    } catch (err) {
-      toast.error('Failed to go live');
-    } finally {
-      setShiftLoading(false);
-    }
+      toast.success('Shift Started');
+    } catch { } finally { setShiftLoading(false); }
   };
 
   const attemptGoOffline = async () => {
     setShiftLoading(true);
     try {
       const res = await api.get(`/tasks/pending/${user.id}`);
-      const { pendingTasks, delayedTasks } = res.data;
-      if (pendingTasks === 0 && delayedTasks === 0) {
-        await executeGoOffline(0, 0, 'Shift ended (All clear)', '');
+      if (res.data.pendingTasks === 0 && res.data.delayedTasks === 0) {
+        await executeGoOffline(0, 0, 'Shift ended', '');
       } else {
         setOfflinePendingData(res.data);
         setValidatingOffline(true);
       }
-    } catch (err) {
-      toast.error('Failed to validate shift status');
-    } finally {
-      setShiftLoading(false);
-    }
+    } catch { } finally { setShiftLoading(false); }
   };
 
   const executeGoOffline = async (pending, delayed, reason, note) => {
     setShiftLoading(true);
     try {
       await api.post('/users/go-offline', {
-        userId: user.id,
-        pendingTasks: pending,
-        delayedTasks: delayed,
-        reason,
-        note,
-        endTime: new Date().toISOString()
+        userId: user.id, pendingTasks: pending, delayedTasks: delayed,
+        reason, note, endTime: new Date().toISOString()
       });
       setIsLive(false);
       setValidatingOffline(false);
-      setOfflinePendingData(null);
-      toast.success('🔴 Shift Ended - You are now Offline', { icon: '👋' });
-    } catch (err) {
-      toast.error('Failed to go offline');
-    } finally {
-      setShiftLoading(false);
-    }
+      toast.success('Shift Ended');
+    } catch { } finally { setShiftLoading(false); }
   };
 
   useEffect(() => { fetchTasks(); fetchBreakStatus(); fetchRequests(); fetchSummary(); }, [fetchTasks, fetchBreakStatus, fetchRequests, fetchSummary]);
+
   useEffect(() => {
     if (!socket) return;
-    socket.on('task:updated', () => { fetchTasks(); fetchRequests(); });
-    socket.on('task:deleted', fetchTasks);
-    socket.on('request:new', fetchRequests);
-    socket.on('request:updated', () => {
-      fetchRequests();
-      fetchTasks();
-      fetchBreakStatus();
-    });
-    socket.on('user:status', (data) => {
-      if (data.userId === user?.id) {
-        fetchBreakStatus();
-        fetchRequests();
-      }
-      fetchTasks();
-    });
-    socket.on('notification:new', n => toast(n.message, { icon: 'ℹ️' }));
+    const updateAll = () => { fetchTasks(); fetchRequests(); fetchBreakStatus(); };
+    socket.on('task:updated', fetchTasks);
+    socket.on('user:status', updateAll);
+    socket.on('notification:new', n => toast(n.message));
     return () => {
       socket.off('task:updated');
-      socket.off('task:deleted');
-      socket.off('request:new');
-      socket.off('request:updated');
       socket.off('user:status');
       socket.off('notification:new');
     };
-  }, [socket, fetchTasks, fetchBreakStatus, user?.id]);
+  }, [socket, fetchTasks, fetchBreakStatus]);
 
   const active = tasks.filter(t => ['in_progress', 'delayed'].includes(t.status));
   const pending = tasks.filter(t => ['not_started', 'paused'].includes(t.status));
@@ -572,172 +410,59 @@ export default function WorkerDashboard() {
 
   return (
     <div className="space-y-6 animate-slide-in max-w-[1400px] mx-auto pb-12 px-4 lg:px-8">
-      {/* Credit System Widget */}
       {user?.role === 'worker' && <CreditWidget />}
 
       <div className="p-6 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl overflow-hidden relative">
         <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-zinc-100 dark:bg-zinc-800 border-2 border-white dark:border-zinc-800 shadow-lg flex items-center justify-center overflow-hidden shrink-0">
-              {user?.profile_picture ? (
-                <img src={getImageUrl(user.profile_picture)} alt={user.name} className="w-full h-full object-cover" />
-              ) : (
-                <User size={32} className="text-zinc-400" />
-              )}
+            <div className="w-16 h-16 rounded-2xl bg-zinc-100 flex items-center justify-center overflow-hidden shrink-0">
+              {user?.profile_picture ? <img src={getImageUrl(user.profile_picture)} className="w-full h-full object-cover" /> : <User size={32} className="text-zinc-400" />}
             </div>
             <div>
-              <p className="text-zinc-400 text-sm font-semibold uppercase tracking-widest">{t('welcome')}</p>
+              <p className="text-zinc-400 text-sm font-semibold uppercase">{t('welcome')}</p>
               <h1 className="text-3xl font-extrabold text-zinc-900 dark:text-white mt-1 tracking-tight">{user?.name}</h1>
-              {projectName && (
-                <div className="mt-4 flex items-center gap-2 group">
-                  <div className="w-1 h-6 bg-blue-500 rounded-full group-hover:scale-y-125 transition-transform" />
-                  <div>
-                    <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em] leading-none mb-1">Active Project</p>
-                    <p className="text-xl font-black text-zinc-800 dark:text-zinc-100 tracking-tight leading-none">{projectName}</p>
-                  </div>
-                </div>
-              )}
+              {projectName && <p className="text-sm font-bold text-blue-500 mt-2 uppercase tracking-wide">Project: {projectName}</p>}
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {/* Shift Control Toggle */}
-            <div className="flex items-center bg-zinc-100 dark:bg-zinc-800/50 p-1 rounded-xl border border-zinc-200 dark:border-zinc-700/50 shadow-inner mr-4">
-              <button
-                onClick={handleGoLive}
-                disabled={isLive || shiftLoading}
-                className={`relative px-6 py-2.5 rounded-lg flex items-center gap-2 font-black transition-all duration-300 disabled:cursor-not-allowed ${isLive ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
-              >
-                <div className={`w-2.5 h-2.5 rounded-full ${isLive ? 'bg-white animate-pulse' : 'bg-emerald-500'}`} />
-                LIVE
-              </button>
-              <button
-                onClick={attemptGoOffline}
-                disabled={!isLive || shiftLoading}
-                className={`relative px-6 py-2.5 rounded-lg flex items-center gap-2 font-black transition-all duration-300 disabled:cursor-not-allowed ${!isLive ? 'bg-zinc-800 dark:bg-zinc-700 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-200/50 dark:hover:bg-zinc-700/50'}`}
-              >
-                <div className={`w-2.5 h-2.5 rounded-full ${!isLive ? 'bg-red-500' : 'bg-zinc-400 dark:bg-zinc-600'}`} />
-                OFFLINE
-              </button>
+            <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl">
+              <button onClick={handleGoLive} disabled={isLive || shiftLoading} className={`px-6 py-2 rounded-lg font-black ${isLive ? 'bg-emerald-500 text-white' : 'text-zinc-500'}`}>LIVE</button>
+              <button onClick={attemptGoOffline} disabled={!isLive || shiftLoading} className={`px-6 py-2 rounded-lg font-black ${!isLive ? 'bg-zinc-800 text-white' : 'text-zinc-500'}`}>OFFLINE</button>
             </div>
-
-            {breakStatus.is_on_break ? (
-              <div className="flex flex-col items-end gap-2 min-w-[200px]">
-                <button className="btn-success px-6 py-2 font-bold group w-full" onClick={() => handleBreak('stop')}>
-                  <Play size={18} className="mr-2" /> {t('end_break')}
-                </button>
-                <ProgressBar progress={breakProgress} color="bg-emerald-500" sublabel={breakTimeLeft} />
-              </div>
-            ) : pendingRequests.some(r => r.type === 'break') ? (
-              <div className="flex flex-col items-end gap-2 min-w-[200px]">
-                <button
-                  className="px-6 py-3 font-bold rounded-xl border bg-amber-50 dark:bg-amber-500/10 text-amber-600 border-amber-200 dark:border-amber-500/20 cursor-wait w-full flex items-center justify-center animate-pulse"
-                  disabled
-                >
-                  <Clock size={18} className="mr-2" /> Pending Approval
-                </button>
-              </div>
-            ) : (
-              <button
-                className={`px-6 py-3 font-bold group rounded-xl border flex items-center transition-all duration-200 ${breakStatus.already_taken_today || !isLive ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 border-zinc-200 dark:border-zinc-700 cursor-not-allowed opacity-60' : 'bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 hover:scale-105 active:scale-95 shadow-lg'}`}
-                onClick={() => !breakStatus.already_taken_today && isLive && handleBreak('start')}
-                disabled={breakStatus.already_taken_today || !isLive}
-                title={!isLive ? 'Go Live to take a break' : ''}
-              >
-                <Pause size={18} className="mr-2" /> {breakStatus.already_taken_today ? t('break_taken') : t('take_break')}
-              </button>
-            )}
-            <button className="btn-secondary px-6 py-3 font-bold group" onClick={() => setShowHistory(true)}>
-              <History size={18} className="mr-2 group-hover:rotate-[-15deg] transition-transform" /> {t('view_history')}
-            </button>
-            <div className="flex gap-4 text-sm bg-zinc-50 dark:bg-zinc-800/50 p-3 rounded-xl border border-zinc-200 dark:border-zinc-700/50">
-              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-blue-500" /> <span className="text-zinc-500 dark:text-zinc-300 font-medium">{active.length} {t('active')}</span></div>
-              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> <span className="text-zinc-500 dark:text-zinc-300 font-medium">{pending.length} {t('pending')}</span></div>
-              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> <span className="text-zinc-500 dark:text-zinc-300 font-medium">{done.length} {t('done')}</span></div>
-            </div>
+            <button className="btn-secondary px-6 py-3 font-bold" onClick={() => setShowHistory(true)}>History</button>
           </div>
         </div>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center py-16"><Loader2 size={24} className="text-zinc-400 animate-spin" /></div>
-      ) : (
+      {loading ? <div className="text-center py-20 animate-pulse">Loading...</div> : (
         <div className="space-y-8">
-          {poolTasks.length > 0 && (
-            <div>
-              <h2 className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-4 border-b border-zinc-200 dark:border-zinc-800 pb-2 flex items-center justify-between">
-                <span>{t('task_pool')}</span>
-                <span className="bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-400 px-2 py-0.5 rounded-lg">{poolTasks.length} {t('pending')}</span>
-              </h2>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {poolTasks.map(t => (
-                  <TaskCard
-                    key={t.id}
-                    task={t}
-                    isPool={true}
-                    onClaim={() => handleClaim(t.id)}
-                    isOnBreak={breakStatus.is_on_break || active.length > 0}
-                  />
-                ))}
-              </div>
+          {(active.length > 0 || pending.length > 0) ? (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[...active, ...pending].map(t => <TaskCard key={t.id} task={t} onAction={fetchTasks} isOnBreak={breakStatus.is_on_break} />)}
             </div>
-          )}
-
-          {active.length > 0 && (
-            <div>
-              <h2 className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-4 border-b border-zinc-200 dark:border-zinc-800 pb-2">{t('active_tasks')}</h2>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {active.map(t => <TaskCard key={t.id} task={t} onAction={fetchTasks} isOnBreak={breakStatus.is_on_break} />)}
-              </div>
-            </div>
-          )}
-
-          {pending.length > 0 && (
-            <div>
-              <h2 className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-4 border-b border-zinc-200 dark:border-zinc-800 pb-2">{t('pending_paused')}</h2>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {pending.map(t => <TaskCard key={t.id} task={t} onAction={fetchTasks} isOnBreak={breakStatus.is_on_break || active.length > 0} />)}
-              </div>
-            </div>
-          )}
-
-          {active.length === 0 && pending.length === 0 && poolTasks.length === 0 && (
-            <div className="text-center py-20 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl flex flex-col items-center justify-center">
-              <p className="text-5xl mb-4 opacity-50">🎉</p>
-              <p className="text-zinc-900 dark:text-zinc-100 font-bold text-lg tracking-tight">No tasks assigned yet</p>
+          ) : (
+            <div className="text-center py-24 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-[32px] bg-zinc-50/50 dark:bg-zinc-900/20">
+              <div className="w-16 h-16 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mx-auto mb-6" />
+              <h3 className="text-2xl font-black mb-2">Standing By</h3>
+              <p className="text-zinc-500 max-w-sm mx-auto">Waiting for the production engine to dispatch your next task.</p>
             </div>
           )}
         </div>
       )}
 
       {showHistory && <HistoryModal tasks={done} onClose={() => setShowHistory(false)} />}
-
       {validatingOffline && offlinePendingData && (
-        <OfflineValidationModal
-          pendingData={offlinePendingData}
-          onClose={() => setValidatingOffline(false)}
-          onConfirm={(reason, note) => executeGoOffline(offlinePendingData.pendingTasks, offlinePendingData.delayedTasks, reason, note)}
-        />
+        <OfflineValidationModal pendingData={offlinePendingData} onClose={() => setValidatingOffline(false)} onConfirm={(r, n) => executeGoOffline(offlinePendingData.pendingTasks, offlinePendingData.delayedTasks, r, n)} />
       )}
-
       {!isLive && !loading && (
-        <div className="absolute inset-0 z-[45] bg-white/70 dark:bg-black/60 backdrop-blur-md flex flex-col items-center justify-center animate-fade-in">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl flex flex-col items-center p-8 max-w-sm w-full mx-4 shadow-2xl text-center">
-            <div className="w-16 h-16 bg-zinc-800 rounded-full flex items-center justify-center mb-6 border border-zinc-700">
-              <User size={32} className="text-zinc-500" />
-            </div>
-            <h2 className="text-2xl font-black text-white tracking-tight mb-2">You are Offline</h2>
-            <p className="text-zinc-400 font-medium">Please Go Live to view your task pool and begin your shift.</p>
-            <button
-              onClick={handleGoLive}
-              disabled={shiftLoading}
-              className="mt-8 btn-primary w-full py-4 text-lg font-black animate-pulse shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:shadow-[0_0_30px_rgba(59,130,246,0.5)] bg-emerald-500 hover:bg-emerald-600 border-emerald-400"
-            >
-              Start Shift (Go Live)
-            </button>
+        <div className="absolute inset-0 z-50 bg-white/70 dark:bg-black/60 backdrop-blur-md flex items-center justify-center">
+          <div className="bg-zinc-900 p-8 rounded-3xl text-center max-w-sm w-full mx-4 shadow-2xl">
+            <h2 className="text-2xl font-black text-white mb-4">You are Offline</h2>
+            <p className="text-zinc-400 mb-8">Go Live to start receiving tasks.</p>
+            <button onClick={handleGoLive} className="btn-primary w-full py-4 text-lg font-black bg-emerald-500 border-emerald-400">Start Shift</button>
           </div>
         </div>
       )}
     </div>
   );
 }
-

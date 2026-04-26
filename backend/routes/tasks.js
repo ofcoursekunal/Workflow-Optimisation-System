@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const creditService = require('../services/creditService');
+const { dispatchNextPlanTask } = require('./planning');
 
 function createNotification(userId, message, type = 'info') {
   try {
@@ -73,9 +74,18 @@ router.get('/', auth, (req, res) => {
 });
 
 // GET all unassigned tasks (Task Pool) - Scope to worker's project
+// NOTE: Workers on a live production plan CANNOT self-claim from pool.
 router.get('/pool', auth, (req, res) => {
   if ((req.user.role === 'worker' || req.user.role === 'supervisor') && !req.user.project_id) {
     return res.json([]); // Workers/Supervisors without project see NO pool tasks
+  }
+
+  // If the worker's project has an active plan, pool is hidden — tasks come from plan dispatch
+  if (req.user.role === 'worker' && req.user.project_id) {
+    const activePlan = db.prepare(
+      "SELECT id FROM production_plans WHERE project_id = ? AND status = 'active' LIMIT 1"
+    ).get(req.user.project_id);
+    if (activePlan) return res.json([]); // plan is active — no self-claiming
   }
 
   let query = `
@@ -346,6 +356,19 @@ router.put('/:id', auth, async (req, res) => {
           if (io) io.emit('user:status', { userId: task.assigned_worker_id, status: 'idle', last_idle_at: new Date().toISOString() });
           const autoAssign = req.app.get('autoAssign');
           if (autoAssign) autoAssign.attemptAutoAssign(io);
+
+          // Plan dispatch: if this task belongs to an active plan, fire next task for this worker
+          if (task.project_id) {
+            const planTaskRow = db.prepare(
+              "SELECT pt.plan_id FROM plan_tasks pt WHERE pt.task_id = ? AND pt.status = 'active' LIMIT 1"
+            ).get(taskId);
+            if (planTaskRow) {
+              // Mark plan_task completed
+              db.prepare("UPDATE plan_tasks SET status = 'completed' WHERE task_id = ?").run(taskId);
+              // Dispatch the next ready task for this worker
+              dispatchNextPlanTask(planTaskRow.plan_id, task.assigned_worker_id, io);
+            }
+          }
         }
         if (task.machine_id) {
           const otherActive = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE machine_id = ? AND id != ? AND status = 'in_progress'").get(task.machine_id, taskId);

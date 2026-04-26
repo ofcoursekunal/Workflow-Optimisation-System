@@ -19,6 +19,7 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle','busy','paused')),
     is_on_break INTEGER DEFAULT 0,
     is_live INTEGER DEFAULT 0,
+    shifts TEXT, -- JSON string of shift schedules
     shift_start_time DATETIME,
     last_idle_at DATETIME,
     profile_picture TEXT,
@@ -140,6 +141,33 @@ db.exec(`
     note TEXT,
     status TEXT NOT NULL DEFAULT 'unread' CHECK(status IN ('unread', 'reviewed')),
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS production_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    quantity INTEGER DEFAULT 1,
+    deadline TEXT,
+    steps TEXT NOT NULL,       -- JSON: [{taskId, taskName, duration, dependsOn[]}]
+    affinity TEXT,             -- JSON: stepAffinity from last simulation
+    summary TEXT,              -- JSON: last simulation stats snapshot
+    status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','active','completed')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  -- Track which plan step a plan-managed task belongs to
+  -- (allows lazy dispatch of the next step when current completes)
+  CREATE TABLE IF NOT EXISTS plan_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id INTEGER NOT NULL REFERENCES production_plans(id) ON DELETE CASCADE,
+    task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    step_id TEXT NOT NULL,     -- matches steps[].taskId from the plan
+    unit_index INTEGER NOT NULL DEFAULT 1,
+    worker_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','active','completed')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
 

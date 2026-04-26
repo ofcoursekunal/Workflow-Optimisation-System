@@ -44,8 +44,8 @@ export default function AlertsPanel({ isOpen, onClose }) {
     }, [socket, activeTab]);
 
     const filteredAlerts = alerts.filter(alert => {
-        const matchesSearch = alert.workerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            alert.reason.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesSearch = (alert.workerName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (alert.reason || '').toLowerCase().includes(searchQuery.toLowerCase());
 
         if (filterType === 'pending') return matchesSearch && alert.pending_tasks > 0 && alert.delayed_tasks === 0;
         if (filterType === 'delayed') return matchesSearch && alert.delayed_tasks > 0;
